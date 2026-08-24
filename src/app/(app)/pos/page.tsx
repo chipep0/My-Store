@@ -10,7 +10,7 @@ import ProductModal from "@/components/ProductModal";
 
 export default function PosPage() {
   const { canPurchase, isManager } = useAuth();
-  const { mode, setMode, addToCart } = useCart();
+  const { mode, setMode, addToCart, openCart } = useCart();
   const { products, stock, loading, reload } = useCatalog();
   const [search, setSearch] = useState("");
   const [activeCat, setActiveCat] = useState("All");
@@ -36,6 +36,7 @@ export default function PosPage() {
   const restock = (p: Product) => {
     if (mode !== "PURCHASE") setMode("PURCHASE");
     addToCart(p, "EA");
+    openCart();
   };
 
   const deleteProduct = async (p: Product) => {
@@ -109,10 +110,10 @@ export default function PosPage() {
         <ProductModal
           knownCategories={deriveCategories(products)}
           onClose={() => setAddOpen(false)}
-          onSaved={(sku) => {
+          onSaved={async (sku) => {
             setAddOpen(false);
-            reload();
-            const p = products.find((x) => x.sku === sku);
+            const fresh = await reload();
+            const p = fresh.find((x) => x.sku === sku);
             if (p) addToCart(p, "EA");
           }}
         />

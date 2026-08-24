@@ -20,10 +20,9 @@ const NAV = [
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { session, loading, cashier, role, isManager, signOut } = useAuth();
   const { settings } = useSettings();
-  const { mode, party, setParty, customers, vendors, addParty, lines, count, totals, lineTotal } = useCart();
+  const { mode, party, setParty, customers, vendors, addParty, lines, count, totals, lineTotal, cartOpen, openCart, closeCart, addToCart } = useCart();
   const router = useRouter();
   const pathname = usePathname();
-  const [cartOpen, setCartOpen] = useState(false);
   const [addPartyOpen, setAddPartyOpen] = useState(false);
 
   useEffect(() => {
@@ -77,7 +76,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="posRow">
         <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>{children}</div>
 
-        {pathname === "/pos" && <CartPanel open={cartOpen} onClose={() => setCartOpen(false)} />}
+        {pathname === "/pos" && <CartPanel open={cartOpen} onClose={closeCart} />}
       </div>
 
       {pathname === "/pos" && (
@@ -86,7 +85,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             {lines.map((l) => {
               const unm = l.unit === "BOX" ? " (Box)" : l.product.units_per_box > 1 ? " (EA)" : "";
               return (
-                <div className="cpRow" key={l.key}>
+                <div className="cpRow" key={l.key} onClick={() => addToCart(l.product, l.unit)}>
                   <span>
                     <b>{l.qty}×</b> {l.product.name}
                     {unm}
@@ -96,7 +95,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               );
             })}
           </div>
-          <div className="cbSummary" onClick={() => setCartOpen(true)}>
+          <div className="cbSummary" onClick={openCart}>
             <div className="n">{count}</div>
             <div className="lbl">{mode === "SALE" ? "View sale" : "View purchase"}</div>
             <div className="tot">{money(totals.grand, currency)}</div>

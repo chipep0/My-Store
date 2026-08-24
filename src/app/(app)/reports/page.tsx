@@ -1,7 +1,10 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
+import { useCart } from "@/contexts/CartContext";
 import { money, signedMoney, qtyBoxLabel } from "@/lib/format";
 import type { PeriodArchive } from "@/lib/types";
 import CompiledReportModal, { CompiledReport } from "@/components/CompiledReportModal";
@@ -27,6 +30,9 @@ function BarRow({ label, val, max, currency, sub }: { label: string; val: number
 
 export default function ReportsPage() {
   const { settings } = useSettings();
+  const { canPurchase } = useAuth();
+  const { setMode, addToCart, openCart } = useCart();
+  const router = useRouter();
   const currency = settings.currency;
   const [showPurchases, setShowPurchases] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -51,7 +57,7 @@ export default function ReportsPage() {
       supabase.from("posinv_order_items").select("order_id,sku,product_name,line_total,base_qty"),
       supabase.from("posinv_expenses").select("amount").gte("expense_on", since.toISOString().slice(0, 10)),
       supabase.from("posinv_other_income").select("amount").gte("received_on", since.toISOString().slice(0, 10)),
-      supabase.from("posinv_products").select("sku,name,category,units_per_box"),
+      supabase.from("posinv_products").select("sku,name,category,units_per_box,active"),
       supabase.from("posinv_inventory").select("sku,on_hand"),
       supabase.from("posinv_period_archive").select("*").order("period_start", { ascending: false }).limit(20),
     ]);
@@ -114,6 +120,7 @@ export default function ReportsPage() {
     const stockMap: Record<string, number> = {};
     (inv || []).forEach((r) => (stockMap[r.sku] = Number(r.on_hand)));
     const low = (prods || [])
+      .filter((p) => p.active !== false)
       .map((p) => ({ sku: p.sku, name: p.name, category: p.category, st: stockMap[p.sku] }))
       .filter((r) => r.st != null && r.st <= settings.low_stock)
       .sort((a, b) => a.st - b.st);
@@ -216,6 +223,15 @@ export default function ReportsPage() {
     const e = new Date(toVal + "T23:59:59.999");
     if (s > e) return alert("From date must be before the To date.");
     compile(s, e, "DATE RANGE REPORT", from === toVal ? s.toLocaleDateString() : `${s.toLocaleDateString()} – ${e.toLocaleDateString()}`);
+  };
+
+  const restockLow = async (sku: string) => {
+    const { data: p, error } = await supabase.from("posinv_products").select("*").eq("sku", sku).single();
+    if (error || !p) return alert("Could not load that product.");
+    setMode("PURCHASE");
+    addToCart(p, "EA");
+    openCart();
+    router.push("/pos");
   };
 
   // Total sales = till/register revenue only — Other Income never counts
@@ -339,6 +355,13 @@ export default function ReportsPage() {
                 <div className="meta">
                   {r.category} · SKU {r.sku}
                 </div>
+                {canPurchase && (
+                  <div className="acts">
+                    <button className="act-refund" onClick={() => restockLow(r.sku)}>
+                      Add stock
+                    </button>
+                  </div>
+                )}
               </div>
             ))
           ) : (

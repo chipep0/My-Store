@@ -57,7 +57,16 @@ export default function ProductCard({
         </div>
         <button className="prodTap" onClick={() => addToCart(product, "EA")}>
           <div className="thumb">
-            <img src={imgFor(product)} loading="lazy" alt="" onError={(e) => ((e.target as HTMLImageElement).src = tileFor(product.category))} />
+            <img
+              src={imgFor(product)}
+              loading="lazy"
+              alt=""
+              onError={(e) => {
+                const img = e.target as HTMLImageElement;
+                img.onerror = null;
+                img.src = tileFor(product.category);
+              }}
+            />
           </div>
           <div className="nm">
             {product.name}
@@ -74,7 +83,16 @@ export default function ProductCard({
         <div className="prod">
           <button className="prodTap" style={{ flex: 1 }} onClick={() => addToCart(product, "BOX")}>
             <div className="thumb">
-              <img src={imgFor(product)} loading="lazy" alt="" onError={(e) => ((e.target as HTMLImageElement).src = tileFor(product.category))} />
+              <img
+              src={imgFor(product)}
+              loading="lazy"
+              alt=""
+              onError={(e) => {
+                const img = e.target as HTMLImageElement;
+                img.onerror = null;
+                img.src = tileFor(product.category);
+              }}
+            />
             </div>
             <div className="nm">
               {product.name} (Box of {upb})

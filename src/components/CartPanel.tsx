@@ -9,7 +9,7 @@ import ReceiptModal, { ReceiptData } from "@/components/ReceiptModal";
 import TenderModal from "@/components/TenderModal";
 
 export default function CartPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { mode, party, lines, changeQty, setDisc, lineTotal, totals, clear } = useCart();
+  const { mode, setMode, party, lines, changeQty, setDisc, lineTotal, totals, clear, bumpCatalog } = useCart();
   const { settings } = useSettings();
   const { cashier, session } = useAuth();
   const [tenderOpen, setTenderOpen] = useState(false);
@@ -98,6 +98,8 @@ export default function CartPanel({ open, onClose }: { open: boolean; onClose: (
         tendered,
       });
       clear();
+      if (mode === "PURCHASE") setMode("SALE");
+      bumpCatalog();
       onClose();
     } catch (err) {
       alert("Failed: " + (err instanceof Error ? err.message : String(err)));

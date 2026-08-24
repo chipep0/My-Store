@@ -64,7 +64,7 @@ export default function ReceiptModal({ data, onClose }: { data: ReceiptData; onC
           <table>
             <tbody>
               <tr>
-                <td>Subtotal</td>
+                <td>Subtotal{isSale && settings.tax_inclusive ? ` (excl. ${settings.tax_name})` : ""}</td>
                 <td className="tr">{money(data.sub, currency)}</td>
               </tr>
               {isSale && (

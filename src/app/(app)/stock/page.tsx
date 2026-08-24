@@ -13,7 +13,7 @@ import ProductModal from "@/components/ProductModal";
 export default function StockPage() {
   const { isManager, canPurchase } = useAuth();
   const { settings } = useSettings();
-  const { setMode, addToCart } = useCart();
+  const { setMode, addToCart, openCart } = useCart();
   const { products, stock, loading, reload } = useCatalog();
   const router = useRouter();
   const [search, setSearch] = useState("");
@@ -27,6 +27,7 @@ export default function StockPage() {
   const restock = (p: Product) => {
     setMode("PURCHASE");
     addToCart(p, "EA");
+    openCart();
     router.push("/pos");
   };
 

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useCart } from "@/contexts/CartContext";
 import type { Product } from "@/lib/types";
 
 const PRODUCT_COLUMNS = "sku,name,description,category,subcategory,sales_price,purchase_price,box_sales_price,box_purchase_price,units_per_box,image_url";
 
 /** Shared by every screen that needs the product catalog + live on-hand stock. */
 export function useCatalog() {
+  const { catalogVersion } = useCart();
   const [products, setProducts] = useState<Product[]>([]);
   const [stock, setStock] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -21,11 +23,14 @@ export function useCatalog() {
     (inv || []).forEach((r) => (s[r.sku] = Number(r.on_hand)));
     setStock(s);
     setLoading(false);
+    return prods || [];
   }, []);
 
+  // Also re-fetch whenever a sale/purchase completes anywhere in the app,
+  // so on-hand counts and the grid never go stale after checkout.
   useEffect(() => {
     reload();
-  }, [reload]);
+  }, [reload, catalogVersion]);
 
   return { products, stock, loading, reload };
 }

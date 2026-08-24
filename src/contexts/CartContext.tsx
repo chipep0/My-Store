@@ -29,6 +29,11 @@ interface CartState {
   customers: string[];
   vendors: string[];
   addParty: (name: string) => Promise<{ ok: boolean; error?: string }>;
+  cartOpen: boolean;
+  openCart: () => void;
+  closeCart: () => void;
+  catalogVersion: number;
+  bumpCatalog: () => void;
 }
 
 const CartCtx = createContext<CartState | null>(null);
@@ -40,6 +45,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [lines, setLines] = useState<CartLine[]>([]);
   const [customers, setCustomers] = useState<string[]>([]);
   const [vendors, setVendors] = useState<string[]>([]);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [catalogVersion, setCatalogVersion] = useState(0);
+
+  const openCart = useCallback(() => setCartOpen(true), []);
+  const closeCart = useCallback(() => setCartOpen(false), []);
+  const bumpCatalog = useCallback(() => setCatalogVersion((v) => v + 1), []);
 
   useEffect(() => {
     supabase
@@ -139,7 +150,30 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const count = lines.reduce((n, l) => n + l.qty, 0);
 
   return (
-    <CartCtx.Provider value={{ mode, setMode, party, setParty, lines, addToCart, changeQty, setDisc, clear, count, totals, lineTotal, customers, vendors, addParty }}>
+    <CartCtx.Provider
+      value={{
+        mode,
+        setMode,
+        party,
+        setParty,
+        lines,
+        addToCart,
+        changeQty,
+        setDisc,
+        clear,
+        count,
+        totals,
+        lineTotal,
+        customers,
+        vendors,
+        addParty,
+        cartOpen,
+        openCart,
+        closeCart,
+        catalogVersion,
+        bumpCatalog,
+      }}
+    >
       {children}
     </CartCtx.Provider>
   );
