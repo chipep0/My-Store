@@ -41,8 +41,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   const save = async (patch: Partial<StoreSettings>) => {
     const next = { ...settings, ...patch };
-    const { error } = await supabase.from("posinv_settings").update(patch).eq("id", 1);
+    const { data, error } = await supabase.from("posinv_settings").update(patch).eq("id", 1).select("id");
     if (error) return { error: error.message };
+    if (!data || data.length === 0) return { error: "Nothing was saved — this account may not have permission (Settings is Manager-only)." };
     setSettings(next);
     return {};
   };

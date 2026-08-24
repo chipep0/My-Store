@@ -54,8 +54,9 @@ export default function StockPage() {
 
   const deleteProduct = async (p: Product) => {
     if (!confirm(`Delete "${p.name}" from the catalog?\n\nPast sales/purchase history is kept — only the product listing is removed.`)) return;
-    const { error } = await supabase.from("posinv_products").delete().eq("sku", p.sku);
+    const { data, error } = await supabase.from("posinv_products").delete().eq("sku", p.sku).select("sku");
     if (error) return alert("Could not delete: " + error.message);
+    if (!data || data.length === 0) return alert("Nothing was deleted — this account may not have permission (deleting products is Manager-only).");
     load();
   };
 

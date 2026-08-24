@@ -32,8 +32,9 @@ export default function OrdersPage() {
 
   const setStatus = async (id: number, status: OrderStatus) => {
     if (!confirm(`Mark order #${id} as ${status}? This adjusts inventory.`)) return;
-    const { error } = await supabase.from("posinv_orders").update({ status }).eq("id", id);
+    const { data, error } = await supabase.from("posinv_orders").update({ status }).eq("id", id).select("id");
     if (error) return alert(error.message);
+    if (!data || data.length === 0) return alert("Nothing was changed — this account may not have permission (refund/void is Manager-only).");
     load();
   };
 

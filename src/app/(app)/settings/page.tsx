@@ -61,9 +61,10 @@ export default function SettingsPage() {
   const deleteAll = async () => {
     const typed = prompt("This permanently deletes EVERY product in your catalog (sales history is kept). Type DELETE to confirm.");
     if (typed !== "DELETE") return;
-    const { error } = await supabase.from("posinv_products").delete().neq("sku", "__none__");
+    const { data, error } = await supabase.from("posinv_products").delete().neq("sku", "__none__").select("sku");
     if (error) return alert(error.message);
-    alert("All products deleted.");
+    if (!data || data.length === 0) return alert("Nothing was deleted — either the catalog is already empty, or this account lacks permission.");
+    alert(`${data.length} product(s) deleted.`);
   };
 
   return (

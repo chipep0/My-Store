@@ -93,8 +93,9 @@ export default function ProductModal({
         image_url,
       };
       if (editing) {
-        const { error } = await supabase.from("posinv_products").update(fields).eq("sku", editProduct!.sku);
+        const { data, error } = await supabase.from("posinv_products").update(fields).eq("sku", editProduct!.sku).select("sku");
         if (error) throw error;
+        if (!data || data.length === 0) throw new Error("Nothing was saved — this account may not have permission (editing products is Manager-only).");
       } else {
         const { error } = await supabase.from("posinv_products").insert({ sku: sku.trim(), ...fields, opening_stock: totalUnits });
         if (error) throw error;
