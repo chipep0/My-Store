@@ -41,7 +41,7 @@ export default function SettingsPage() {
         store_name: form.store_name.trim() || "My Store",
         currency: form.currency.trim() || "$",
         tax_name: form.tax_name.trim() || "Tax",
-        tax_rate: Math.round((Number(form.tax_rate) || 0) * 10000) / 1000000,
+        tax_rate: Math.round((Number(form.tax_rate) || 0) * 10000) / 10000,
         low_stock: Number(form.low_stock) || 0,
         footer_message: form.footer_message.trim(),
         backdate_enabled: form.backdate_enabled,
