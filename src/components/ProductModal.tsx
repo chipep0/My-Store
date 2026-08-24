@@ -66,14 +66,17 @@ export default function ProductModal({
   const cats = Array.from(new Set([...SEED_CATS, ...knownCategories])).sort();
 
   const save = async () => {
-    if (!sku.trim() || !name.trim()) return alert("Barcode and product name are required.");
+    if (!name.trim()) return alert("Product name is required.");
+    // No barcode to scan? Make one up — a real code isn't required, it's
+    // just how the product is identified internally.
+    const finalSku = sku.trim() || `LOCAL${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`.toUpperCase();
     setSaving(true);
     try {
       let image_url = imgUrl;
       if (imgFile) {
         try {
           const ext = (imgFile.name.split(".").pop() || "jpg").toLowerCase();
-          const path = `${sku}-${Date.now()}.${ext}`;
+          const path = `${finalSku}-${Date.now()}.${ext}`;
           const { error: ue } = await supabase.storage.from("product-images").upload(path, imgFile, { upsert: true, contentType: imgFile.type });
           if (ue) throw ue;
           image_url = supabase.storage.from("product-images").getPublicUrl(path).data.publicUrl;
@@ -97,10 +100,10 @@ export default function ProductModal({
         const res = await guardedUpdate("posinv_products", "sku", editProduct!.sku, fields, "editing products");
         if (!res.ok) throw new Error(res.error);
       } else {
-        const { error } = await supabase.from("posinv_products").insert({ sku: sku.trim(), ...fields, opening_stock: totalUnits });
+        const { error } = await supabase.from("posinv_products").insert({ sku: finalSku, ...fields, opening_stock: totalUnits });
         if (error) throw error;
       }
-      onSaved(sku.trim());
+      onSaved(finalSku);
     } catch (err) {
       alert("Could not save product: " + (err instanceof Error ? err.message : err));
     } finally {
@@ -117,8 +120,8 @@ export default function ProductModal({
         </div>
         <label>Photo (take one or choose)</label>
         <input type="file" accept="image/*" onChange={(e) => setImgFile(e.target.files?.[0] || null)} />
-        <label>Barcode / SKU</label>
-        <input value={sku} readOnly={editing || !!prefill?.sku} onChange={(e) => setSku(e.target.value)} placeholder="Scanned code" />
+        <label>Barcode / SKU (optional — leave blank if this product has none)</label>
+        <input value={sku} readOnly={editing || !!prefill?.sku} onChange={(e) => setSku(e.target.value)} placeholder="Scan or type a code, or leave blank" />
         <label>Product name</label>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Coke 2-liter" />
         <label>Description (optional)</label>

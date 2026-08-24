@@ -55,7 +55,14 @@ export default function ReportsPage() {
 
     const [{ data: orders }, { data: items }, { data: expenses }, { data: otherIncome }, { data: prods }, { data: inv }, { data: arch }] = await Promise.all([
       supabase.from("posinv_orders").select("id,order_on,type,status,balance_due").gte("order_on", since.toISOString()),
-      supabase.from("posinv_order_items").select("order_id,sku,product_name,line_total,base_qty"),
+      // Scoped via the parent order's date, not fetched unfiltered — an
+      // unbounded select silently truncates at Supabase's default 1000-row
+      // cap once the shop has logged that many line items in total, which
+      // quietly drops the newest sales from every report below.
+      supabase
+        .from("posinv_order_items")
+        .select("order_id,sku,product_name,line_total,base_qty,posinv_orders!inner(order_on)")
+        .gte("posinv_orders.order_on", since.toISOString()),
       supabase.from("posinv_expenses").select("amount").gte("expense_on", localDateStr(since)),
       supabase.from("posinv_other_income").select("amount,deduct_from_sales").gte("received_on", localDateStr(since)),
       supabase.from("posinv_products").select("sku,name,category,units_per_box,active"),
@@ -139,7 +146,11 @@ export default function ReportsPage() {
   const compile = async (start: Date, end: Date, label: string, rangeTxt: string) => {
     const [{ data: orders, error: oe }, { data: items, error: ie }, { data: expenses, error: ee }, { data: otherIncome, error: oie }, { data: prods }] = await Promise.all([
       supabase.from("posinv_orders").select("id,order_on,type,status,balance_due").gte("order_on", start.toISOString()).lte("order_on", end.toISOString()),
-      supabase.from("posinv_order_items").select("order_id,sku,product_name,line_total,base_qty"),
+      supabase
+        .from("posinv_order_items")
+        .select("order_id,sku,product_name,line_total,base_qty,posinv_orders!inner(order_on)")
+        .gte("posinv_orders.order_on", start.toISOString())
+        .lte("posinv_orders.order_on", end.toISOString()),
       supabase.from("posinv_expenses").select("category,description,amount").gte("expense_on", localDateStr(start)).lte("expense_on", localDateStr(end)),
       supabase.from("posinv_other_income").select("category,recipient,description,amount,deduct_from_sales").gte("received_on", localDateStr(start)).lte("received_on", localDateStr(end)),
       supabase.from("posinv_products").select("sku,units_per_box"),
