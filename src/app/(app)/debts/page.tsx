@@ -23,23 +23,36 @@ interface DebtGroup {
   orders: DebtOrder[];
 }
 
+interface Contact {
+  phone: string | null;
+  notes: string | null;
+}
+
 export default function DebtsPage() {
   const { settings } = useSettings();
   const { session } = useAuth();
   const currency = settings.currency;
   const [groups, setGroups] = useState<DebtGroup[]>([]);
+  const [contacts, setContacts] = useState<Record<string, Contact>>({});
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [payFor, setPayFor] = useState<DebtOrder | null>(null);
+  const [editContact, setEditContact] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data: orders } = await supabase
-      .from("posinv_orders")
-      .select("id,order_on,party,total_paid,balance_due")
-      .eq("type", "SALE")
-      .eq("status", "Open")
-      .order("order_on", { ascending: true });
+    const [{ data: orders }, { data: custs }] = await Promise.all([
+      supabase
+        .from("posinv_orders")
+        .select("id,order_on,party,total_paid,balance_due")
+        .eq("type", "SALE")
+        .eq("status", "Open")
+        .order("order_on", { ascending: true }),
+      supabase.from("posinv_customers").select("name,phone,notes"),
+    ]);
+    const contactMap: Record<string, Contact> = {};
+    (custs || []).forEach((c) => (contactMap[c.name] = { phone: c.phone, notes: c.notes }));
+    setContacts(contactMap);
     const ids = (orders || []).map((o) => o.id);
     const [{ data: items }, { data: payments }] = ids.length
       ? await Promise.all([
@@ -99,6 +112,13 @@ export default function DebtsPage() {
     load();
   };
 
+  const saveContact = async (party: string, contact: Contact) => {
+    const { error } = await supabase.from("posinv_customers").upsert({ name: party, phone: contact.phone, notes: contact.notes }, { onConflict: "name" });
+    if (error) return alert("Could not save contact details: " + error.message);
+    setEditContact(null);
+    load();
+  };
+
   const totalOwed = groups.reduce((s, g) => s + g.owed, 0);
 
   return (
@@ -131,8 +151,21 @@ export default function DebtsPage() {
               <b>{g.party}</b>
               <span className="badge b-Open">{money(g.owed, currency)}</span>
             </div>
-            <div className="meta">
-              {g.orders.length} order{g.orders.length === 1 ? "" : "s"} outstanding
+            <div className="meta" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span>
+                {g.orders.length} order{g.orders.length === 1 ? "" : "s"} outstanding
+                {contacts[g.party]?.phone ? " · 📞 " + contacts[g.party].phone : ""}
+              </span>
+              <button
+                className="act-void"
+                style={{ marginLeft: "auto" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditContact(g.party);
+                }}
+              >
+                {contacts[g.party]?.phone || contacts[g.party]?.notes ? "Edit contact" : "Add contact"}
+              </button>
             </div>
 
             {expanded === g.party && (
@@ -181,6 +214,14 @@ export default function DebtsPage() {
       )}
 
       {payFor && <PaymentModal order={payFor} currency={currency} onCancel={() => setPayFor(null)} onConfirm={(amt) => recordPayment(payFor, amt)} />}
+      {editContact && (
+        <ContactModal
+          party={editContact}
+          contact={contacts[editContact] || { phone: null, notes: null }}
+          onCancel={() => setEditContact(null)}
+          onSave={(c) => saveContact(editContact, c)}
+        />
+      )}
     </div>
   );
 }
@@ -209,6 +250,39 @@ function PaymentModal({ order, currency, onCancel, onConfirm }: { order: DebtOrd
         <input type="number" step="0.01" min={0} max={order.balance_due} value={amount} onChange={(e) => setAmount(e.target.value)} />
         <button className="checkout" style={{ background: "var(--teal)" }} disabled={saving} onClick={confirm}>
           {saving ? "Saving…" : "Save payment"}
+        </button>
+        <button className="btn sec" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ContactModal({ party, contact, onCancel, onSave }: { party: string; contact: Contact; onCancel: () => void; onSave: (contact: Contact) => Promise<void> | void }) {
+  const [phone, setPhone] = useState(contact.phone || "");
+  const [notes, setNotes] = useState(contact.notes || "");
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await onSave({ phone: phone.trim() || null, notes: notes.trim() || null });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal">
+      <div className="mbox">
+        <h3>Contact details — {party}</h3>
+        <label>Phone</label>
+        <input type="tel" autoFocus value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="e.g. 097 123 4567" />
+        <label>Notes (optional)</label>
+        <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. address, alternate contact" />
+        <button className="checkout" style={{ background: "var(--teal)" }} disabled={saving} onClick={save}>
+          {saving ? "Saving…" : "Save contact"}
         </button>
         <button className="btn sec" onClick={onCancel}>
           Cancel
