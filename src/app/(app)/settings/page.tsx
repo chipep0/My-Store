@@ -14,6 +14,7 @@ export default function SettingsPage() {
   const [logoPreview, setLogoPreview] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [deleteDate, setDeleteDate] = useState("");
 
   useEffect(() => {
     setForm(settings);
@@ -65,6 +66,30 @@ export default function SettingsPage() {
     const res = await guardedMutation(supabase.from("posinv_products").delete().neq("sku", "__none__").select("sku"), "deleted", "Delete ALL");
     if (!res.ok) return alert(res.error + " (Or the catalog was already empty.)");
     alert(`${res.data.length} product(s) deleted.`);
+  };
+
+  const deleteOrdersForDate = async () => {
+    if (!deleteDate) return alert("Pick a date first.");
+    const start = new Date(deleteDate + "T00:00:00");
+    const end = new Date(deleteDate + "T23:59:59.999");
+    const { count } = await supabase
+      .from("posinv_orders")
+      .select("id", { count: "exact", head: true })
+      .gte("order_on", start.toISOString())
+      .lte("order_on", end.toISOString());
+    if (!count) return alert("No orders (sales or purchases) found on that date.");
+    const typed = prompt(
+      `This permanently deletes ${count} order(s) — sales AND purchases — from ${start.toLocaleDateString()}, along with their line items and any debt/payment history. Refunds/voids on other dates are unaffected. This cannot be undone. Type DELETE to confirm.`
+    );
+    if (typed !== "DELETE") return;
+    const res = await guardedMutation(
+      supabase.from("posinv_orders").delete().gte("order_on", start.toISOString()).lte("order_on", end.toISOString()).select("id"),
+      "deleted",
+      "Delete orders for a date"
+    );
+    if (!res.ok) return alert(res.error);
+    alert(`${res.data.length} order(s) deleted.`);
+    setDeleteDate("");
   };
 
   return (
@@ -149,6 +174,19 @@ export default function SettingsPage() {
             </div>
             <button className="btn sec" style={{ borderColor: "var(--danger)", color: "var(--danger)" }} onClick={deleteAll}>
               Delete ALL products
+            </button>
+
+            <div style={{ height: 1, background: "var(--line, #eee)", margin: "16px 0" }} />
+
+            <div style={{ color: "var(--muted)", fontSize: 12, margin: "0 0 10px" }}>
+              Permanently deletes every order — sales and purchases — dated on a specific day (and any linked debt/payment
+              records). Use this to wipe bad or test data. For a normal mistaken sale, prefer Refund/Void from Orders instead —
+              this keeps no record at all.
+            </div>
+            <label>Date to wipe</label>
+            <input type="date" value={deleteDate} onChange={(e) => setDeleteDate(e.target.value)} />
+            <button className="btn sec" style={{ borderColor: "var(--danger)", color: "var(--danger)", marginTop: 10 }} onClick={deleteOrdersForDate}>
+              Delete orders for this date
             </button>
           </div>
         </>
