@@ -6,7 +6,7 @@ export interface CompiledReport {
   label: string;
   rangeTxt: string;
   orderCount: number;
-  totalSales: number;
+  posSales: number;
   totalPurch: number;
   totalExpenses: number;
   totalOtherIncome: number;
@@ -20,9 +20,13 @@ export interface CompiledReport {
 export default function CompiledReportModal({ report, onClose }: { report: CompiledReport; onClose: () => void }) {
   const { settings } = useSettings();
   const currency = settings.currency;
-  const profit = report.totalSales - report.totalPurch;
-  const totalRevenue = report.totalSales + report.totalOtherIncome;
-  const netProfit = (report.showPurchases ? profit : report.totalSales) - report.totalExpenses + report.totalOtherIncome;
+  // Total sales = everything earned (till + sent-directly). Cash at hand backs
+  // out both Other Income (never touched the till) and Expenses (assumed paid
+  // out of that same till cash) to land on what should physically be in the drawer.
+  const totalSales = report.posSales + report.totalOtherIncome;
+  const cashAtHand = totalSales - report.totalOtherIncome - report.totalExpenses;
+  const profit = totalSales - report.totalPurch;
+  const netProfit = (report.showPurchases ? profit : totalSales) - report.totalExpenses;
 
   return (
     <div className="modal" id="reportModal">
@@ -44,21 +48,19 @@ export default function CompiledReportModal({ report, onClose }: { report: Compi
                 <td className="tr">{report.orderCount}</td>
               </tr>
               <tr>
-                <td>Total sales (cash at hand)</td>
-                <td className="tr">{money(report.totalSales, currency)}</td>
+                <td>Total sales</td>
+                <td className="tr">{money(totalSales, currency)}</td>
               </tr>
               {report.totalOtherIncome > 0 && (
-                <>
-                  <tr>
-                    <td>Other income (sent directly)</td>
-                    <td className="tr">{money(report.totalOtherIncome, currency)}</td>
-                  </tr>
-                  <tr>
-                    <td>Total revenue</td>
-                    <td className="tr">{money(totalRevenue, currency)}</td>
-                  </tr>
-                </>
+                <tr>
+                  <td>Other income (sent directly)</td>
+                  <td className="tr">{money(report.totalOtherIncome, currency)}</td>
+                </tr>
               )}
+              <tr>
+                <td>Cash at hand</td>
+                <td className="tr">{money(cashAtHand, currency)}</td>
+              </tr>
               {report.showPurchases && (
                 <>
                   <tr>

@@ -30,7 +30,7 @@ export default function ReportsPage() {
   const currency = settings.currency;
   const [showPurchases, setShowPurchases] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ totalSales: 0, totalPurch: 0, totalExpenses: 0, totalOtherIncome: 0, pctPaid: 100 });
+  const [stats, setStats] = useState({ posSales: 0, totalPurch: 0, totalExpenses: 0, totalOtherIncome: 0, pctPaid: 100 });
   const [top, setTop] = useState<{ sku: string; name: string; total: number; qty: number; unitsPerBox: number }[]>([]);
   const [months, setMonths] = useState<{ label: string; total: number }[]>([]);
   const [lowStock, setLowStock] = useState<{ sku: string; name: string; category: string | null; st: number }[]>([]);
@@ -62,7 +62,7 @@ export default function ReportsPage() {
     const ordMap: Record<number, OrdRow> = {};
     (orders || []).forEach((o) => (ordMap[o.id] = o as OrdRow));
 
-    let totalSales = 0,
+    let posSales = 0,
       totalPurch = 0,
       paidCount = 0,
       saleOrderCount = 0;
@@ -79,7 +79,7 @@ export default function ReportsPage() {
       if (!o || o.status === "Void" || o.status === "Refund") return;
       const lt = Number(it.line_total) || 0;
       if (o.type === "SALE") {
-        totalSales += lt;
+        posSales += lt;
         const s = bySku[it.sku] || (bySku[it.sku] = { name: it.product_name, total: 0, qty: 0 });
         s.total += lt;
         s.qty += Number(it.base_qty) || 0;
@@ -92,7 +92,7 @@ export default function ReportsPage() {
     });
     const totalExpenses = (expenses || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const totalOtherIncome = (otherIncome || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    setStats({ totalSales, totalPurch, totalExpenses, totalOtherIncome, pctPaid: saleOrderCount ? Math.round((paidCount / saleOrderCount) * 100) : 100 });
+    setStats({ posSales, totalPurch, totalExpenses, totalOtherIncome, pctPaid: saleOrderCount ? Math.round((paidCount / saleOrderCount) * 100) : 100 });
 
     const topArr = Object.entries(bySku)
       .map(([sku, v]) => ({ sku, name: v.name, total: v.total, qty: v.qty, unitsPerBox: upbMap[sku] || 1 }))
@@ -140,7 +140,7 @@ export default function ReportsPage() {
     const ordMap: Record<number, OrdRow> = {};
     (orders || []).forEach((o) => (ordMap[o.id] = o as OrdRow));
 
-    let totalSales = 0,
+    let posSales = 0,
       totalPurch = 0;
     const bySku: Record<string, { name: string; total: number; qty: number }> = {};
     const byPurchSku: Record<string, { name: string; total: number; qty: number }> = {};
@@ -150,7 +150,7 @@ export default function ReportsPage() {
       if (!o || o.status === "Void" || o.status === "Refund") return;
       const lt = Number(it.line_total) || 0;
       if (o.type === "SALE") {
-        totalSales += lt;
+        posSales += lt;
         const s = bySku[it.sku] || (bySku[it.sku] = { name: it.product_name, total: 0, qty: 0 });
         s.total += lt;
         s.qty += Number(it.base_qty) || 0;
@@ -169,7 +169,7 @@ export default function ReportsPage() {
       label,
       rangeTxt,
       orderCount: counted.size,
-      totalSales,
+      posSales,
       totalPurch,
       totalExpenses,
       totalOtherIncome,
@@ -211,9 +211,13 @@ export default function ReportsPage() {
     compile(s, e, "DATE RANGE REPORT", from === toVal ? s.toLocaleDateString() : `${s.toLocaleDateString()} – ${e.toLocaleDateString()}`);
   };
 
-  const profit = stats.totalSales - stats.totalPurch;
-  const totalRevenue = stats.totalSales + stats.totalOtherIncome;
-  const netProfit = (showPurchases ? profit : stats.totalSales) - stats.totalExpenses + stats.totalOtherIncome;
+  // Total Sales = everything earned (till + sent-directly). Cash at hand backs
+  // out both Other Income (never touched the till) and Expenses (assumed paid
+  // out of that same till cash) to land on what should physically be in the drawer.
+  const totalSales = stats.posSales + stats.totalOtherIncome;
+  const cashAtHand = totalSales - stats.totalOtherIncome - stats.totalExpenses;
+  const profit = totalSales - stats.totalPurch;
+  const netProfit = (showPurchases ? profit : totalSales) - stats.totalExpenses;
   const maxTop = top.length ? top[0].total : 0;
   const maxMonth = Math.max(1, ...months.map((m) => m.total));
 
@@ -260,8 +264,8 @@ export default function ReportsPage() {
         <>
           <div className="stat4">
             <div className="stat">
-              <div className="lbl">Total sales (cash at hand)</div>
-              <div className="val">{money(stats.totalSales, currency)}</div>
+              <div className="lbl">Total sales</div>
+              <div className="val">{money(totalSales, currency)}</div>
             </div>
             {stats.totalOtherIncome > 0 && (
               <div className="stat">
@@ -269,12 +273,10 @@ export default function ReportsPage() {
                 <div className="val">{money(stats.totalOtherIncome, currency)}</div>
               </div>
             )}
-            {stats.totalOtherIncome > 0 && (
-              <div className="stat">
-                <div className="lbl">Total revenue</div>
-                <div className="val">{money(totalRevenue, currency)}</div>
-              </div>
-            )}
+            <div className="stat">
+              <div className="lbl">Cash at hand</div>
+              <div className="val">{money(cashAtHand, currency)}</div>
+            </div>
             {showPurchases && (
               <div className="stat">
                 <div className="lbl">Total purchases</div>
