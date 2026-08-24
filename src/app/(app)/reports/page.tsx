@@ -1,0 +1,341 @@
+"use client";
+import { useCallback, useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { useSettings } from "@/contexts/SettingsContext";
+import { money, signedMoney, qtyBoxLabel } from "@/lib/format";
+import type { PeriodArchive } from "@/lib/types";
+import CompiledReportModal, { CompiledReport } from "@/components/CompiledReportModal";
+
+interface OrdRow { id: number; order_on: string; type: "SALE" | "PURCHASE"; status: string }
+interface ItemRow { order_id: number; sku: string; product_name: string; line_total: number; base_qty: number }
+
+function BarRow({ label, val, max, currency, sub }: { label: string; val: number; max: number; currency: string; sub?: string }) {
+  const pct = max > 0 ? Math.max(4, Math.round((val / max) * 100)) : 4;
+  return (
+    <div className="barrow" style={{ alignItems: "flex-start" }}>
+      <div className="bnm" title={label}>
+        {label}
+        {sub && <div style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600, marginTop: 2 }}>{sub}</div>}
+      </div>
+      <div className="btrack" style={{ marginTop: sub ? 2 : 0 }}>
+        <div className="bfill" style={{ width: pct + "%" }} />
+      </div>
+      <div className="bval">{money(val, currency)}</div>
+    </div>
+  );
+}
+
+export default function ReportsPage() {
+  const { settings } = useSettings();
+  const currency = settings.currency;
+  const [showPurchases, setShowPurchases] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({ totalSales: 0, totalPurch: 0, totalExpenses: 0, pctPaid: 100 });
+  const [top, setTop] = useState<{ sku: string; name: string; total: number; qty: number; unitsPerBox: number }[]>([]);
+  const [months, setMonths] = useState<{ label: string; total: number }[]>([]);
+  const [lowStock, setLowStock] = useState<{ sku: string; name: string; category: string | null; st: number }[]>([]);
+  const [archive, setArchive] = useState<PeriodArchive[]>([]);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [report, setReport] = useState<CompiledReport | null>(null);
+
+  const loadDashboard = useCallback(async () => {
+    setLoading(true);
+    const since = new Date();
+    since.setDate(1);
+    since.setHours(0, 0, 0, 0);
+    since.setMonth(since.getMonth() - 11);
+
+    const [{ data: orders }, { data: items }, { data: expenses }, { data: prods }, { data: inv }, { data: arch }] = await Promise.all([
+      supabase.from("posinv_orders").select("id,order_on,type,status").gte("order_on", since.toISOString()),
+      supabase.from("posinv_order_items").select("order_id,sku,product_name,line_total,base_qty"),
+      supabase.from("posinv_expenses").select("amount").gte("expense_on", since.toISOString().slice(0, 10)),
+      supabase.from("posinv_products").select("sku,name,category,units_per_box"),
+      supabase.from("posinv_inventory").select("sku,on_hand"),
+      supabase.from("posinv_period_archive").select("*").order("period_start", { ascending: false }).limit(20),
+    ]);
+
+    const upbMap: Record<string, number> = {};
+    (prods || []).forEach((p) => (upbMap[p.sku] = Number(p.units_per_box) || 1));
+
+    const ordMap: Record<number, OrdRow> = {};
+    (orders || []).forEach((o) => (ordMap[o.id] = o as OrdRow));
+
+    let totalSales = 0,
+      totalPurch = 0,
+      paidCount = 0,
+      saleOrderCount = 0;
+    (orders || []).forEach((o) => {
+      if (o.type === "SALE" && o.status !== "Void") {
+        saleOrderCount++;
+        if (o.status === "Paid") paidCount++;
+      }
+    });
+    const bySku: Record<string, { name: string; total: number; qty: number }> = {};
+    const byMonth: Record<string, number> = {};
+    (items as ItemRow[] || []).forEach((it) => {
+      const o = ordMap[it.order_id];
+      if (!o || o.status === "Void" || o.status === "Refund") return;
+      const lt = Number(it.line_total) || 0;
+      if (o.type === "SALE") {
+        totalSales += lt;
+        const s = bySku[it.sku] || (bySku[it.sku] = { name: it.product_name, total: 0, qty: 0 });
+        s.total += lt;
+        s.qty += Number(it.base_qty) || 0;
+        const d = new Date(o.order_on);
+        const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+        byMonth[key] = (byMonth[key] || 0) + lt;
+      } else if (o.type === "PURCHASE") {
+        totalPurch += lt;
+      }
+    });
+    const totalExpenses = (expenses || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    setStats({ totalSales, totalPurch, totalExpenses, pctPaid: saleOrderCount ? Math.round((paidCount / saleOrderCount) * 100) : 100 });
+
+    const topArr = Object.entries(bySku)
+      .map(([sku, v]) => ({ sku, name: v.name, total: v.total, qty: v.qty, unitsPerBox: upbMap[sku] || 1 }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10);
+    setTop(topArr);
+
+    const monthsArr: { label: string; total: number }[] = [];
+    const d = new Date(since);
+    for (let i = 0; i < 12; i++) {
+      const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+      monthsArr.push({ label: d.toLocaleDateString(undefined, { month: "short", year: "2-digit" }), total: byMonth[key] || 0 });
+      d.setMonth(d.getMonth() + 1);
+    }
+    setMonths(monthsArr);
+
+    const stockMap: Record<string, number> = {};
+    (inv || []).forEach((r) => (stockMap[r.sku] = Number(r.on_hand)));
+    const low = (prods || [])
+      .map((p) => ({ sku: p.sku, name: p.name, category: p.category, st: stockMap[p.sku] }))
+      .filter((r) => r.st != null && r.st <= settings.low_stock)
+      .sort((a, b) => a.st - b.st);
+    setLowStock(low);
+
+    setArchive((arch as PeriodArchive[]) || []);
+    setLoading(false);
+  }, [settings.low_stock]);
+
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
+
+  const compile = async (start: Date, end: Date, label: string, rangeTxt: string) => {
+    const [{ data: orders, error: oe }, { data: items, error: ie }, { data: expenses, error: ee }, { data: prods }] = await Promise.all([
+      supabase.from("posinv_orders").select("id,order_on,type,status").gte("order_on", start.toISOString()).lte("order_on", end.toISOString()),
+      supabase.from("posinv_order_items").select("order_id,sku,product_name,line_total,base_qty"),
+      supabase.from("posinv_expenses").select("category,description,amount").gte("expense_on", start.toISOString().slice(0, 10)).lte("expense_on", end.toISOString().slice(0, 10)),
+      supabase.from("posinv_products").select("sku,units_per_box"),
+    ]);
+    if (oe || ie || ee) return alert("Could not compile report: " + (oe || ie || ee)?.message);
+
+    const upbMap: Record<string, number> = {};
+    (prods || []).forEach((p) => (upbMap[p.sku] = Number(p.units_per_box) || 1));
+    const ordMap: Record<number, OrdRow> = {};
+    (orders || []).forEach((o) => (ordMap[o.id] = o as OrdRow));
+
+    let totalSales = 0,
+      totalPurch = 0;
+    const bySku: Record<string, { name: string; total: number; qty: number }> = {};
+    const byPurchSku: Record<string, { name: string; total: number; qty: number }> = {};
+    const counted = new Set<number>();
+    (items as ItemRow[] || []).forEach((it) => {
+      const o = ordMap[it.order_id];
+      if (!o || o.status === "Void" || o.status === "Refund") return;
+      const lt = Number(it.line_total) || 0;
+      if (o.type === "SALE") {
+        totalSales += lt;
+        const s = bySku[it.sku] || (bySku[it.sku] = { name: it.product_name, total: 0, qty: 0 });
+        s.total += lt;
+        s.qty += Number(it.base_qty) || 0;
+      } else if (o.type === "PURCHASE") {
+        totalPurch += lt;
+        const s = byPurchSku[it.sku] || (byPurchSku[it.sku] = { name: it.product_name, total: 0, qty: 0 });
+        s.total += lt;
+        s.qty += Number(it.base_qty) || 0;
+      }
+      counted.add(o.id);
+    });
+    const totalExpenses = (expenses || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+
+    setReport({
+      label,
+      rangeTxt,
+      orderCount: counted.size,
+      totalSales,
+      totalPurch,
+      totalExpenses,
+      showPurchases,
+      products: Object.entries(bySku)
+        .map(([sku, v]) => ({ sku, name: v.name, total: v.total, qty: v.qty, unitsPerBox: upbMap[sku] || 1 }))
+        .sort((a, b) => b.total - a.total),
+      expenseLines: expenses || [],
+      purchases: Object.entries(byPurchSku)
+        .map(([sku, v]) => ({ sku, name: v.name, total: v.total, qty: v.qty, unitsPerBox: upbMap[sku] || 1 }))
+        .sort((a, b) => b.total - a.total),
+    });
+  };
+
+  const compilePeriod = (period: "day" | "week" | "month") => {
+    const end = new Date();
+    const start = new Date();
+    if (period === "day") start.setHours(0, 0, 0, 0);
+    else if (period === "week") {
+      const dow = (start.getDay() + 6) % 7;
+      start.setDate(start.getDate() - dow);
+      start.setHours(0, 0, 0, 0);
+    } else {
+      start.setDate(1);
+      start.setHours(0, 0, 0, 0);
+    }
+    const label = period === "day" ? "DAILY REPORT" : period === "week" ? "WEEKLY REPORT" : "MONTHLY REPORT";
+    const rangeTxt = period === "month" ? start.toLocaleDateString(undefined, { month: "long", year: "numeric" }) : `${start.toLocaleDateString()} – ${end.toLocaleDateString()}`;
+    compile(start, end, label, rangeTxt);
+  };
+
+  const compileCustom = () => {
+    if (!from) return alert("Pick a From date.");
+    const toVal = to || from;
+    const s = new Date(from + "T00:00:00");
+    const e = new Date(toVal + "T23:59:59.999");
+    if (s > e) return alert("From date must be before the To date.");
+    compile(s, e, "DATE RANGE REPORT", from === toVal ? s.toLocaleDateString() : `${s.toLocaleDateString()} – ${e.toLocaleDateString()}`);
+  };
+
+  const profit = stats.totalSales - stats.totalPurch;
+  const netProfit = (showPurchases ? profit : stats.totalSales) - stats.totalExpenses;
+  const maxTop = top.length ? top[0].total : 0;
+  const maxMonth = Math.max(1, ...months.map((m) => m.total));
+
+  return (
+    <div className="view">
+      <div className="vhead">
+        Reports <span style={{ fontSize: 12, fontWeight: 600, color: "var(--muted)" }}>— last 12 months</span>
+      </div>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 14px" }}>
+        <input type="checkbox" className="chk" checked={showPurchases} onChange={(e) => setShowPurchases(e.target.checked)} />
+        <span style={{ textTransform: "none", fontWeight: 600, color: "var(--ink)", fontSize: 13 }}>Include purchases (restocking) in reports</span>
+      </label>
+      <div style={{ display: "flex", gap: 8, margin: "0 0 16px" }}>
+        <button className="btn sm" style={{ flex: 1 }} onClick={() => compilePeriod("day")}>
+          📄 Today
+        </button>
+        <button className="btn sm" style={{ flex: 1 }} onClick={() => compilePeriod("week")}>
+          📄 This week
+        </button>
+        <button className="btn sm" style={{ flex: 1 }} onClick={() => compilePeriod("month")}>
+          📄 This month
+        </button>
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-end", margin: "0 0 16px" }}>
+        <div style={{ flex: 1 }}>
+          <label>From</label>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <label>To</label>
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        </div>
+        <button className="btn sm" style={{ marginBottom: 1 }} onClick={compileCustom}>
+          📄 Compile
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="empty">
+          <div className="spin" />
+          Loading…
+        </div>
+      ) : (
+        <>
+          <div className="stat4">
+            <div className="stat">
+              <div className="lbl">Total sales</div>
+              <div className="val">{money(stats.totalSales, currency)}</div>
+            </div>
+            {showPurchases && (
+              <div className="stat">
+                <div className="lbl">Total purchases</div>
+                <div className="val">{money(stats.totalPurch, currency)}</div>
+              </div>
+            )}
+            {showPurchases && (
+              <div className="stat">
+                <div className="lbl">Gross profit</div>
+                <div className="val">{signedMoney(profit, currency)}</div>
+              </div>
+            )}
+            <div className="stat">
+              <div className="lbl">Total expenses</div>
+              <div className="val">{money(stats.totalExpenses, currency)}</div>
+            </div>
+            <div className="stat">
+              <div className="lbl">Net profit</div>
+              <div className="val">{signedMoney(netProfit, currency)}</div>
+            </div>
+            <div className="stat">
+              <div className="lbl">Orders paid</div>
+              <div className="val">{stats.pctPaid}%</div>
+            </div>
+          </div>
+
+          <div className="rpthead">Top 10 products by sales</div>
+          {top.length ? top.map((t) => <BarRow key={t.sku} label={t.name} val={t.total} max={maxTop} currency={currency} sub={qtyBoxLabel(t.unitsPerBox, t.qty)} />) : <div className="empty">No sales yet.</div>}
+
+          <div className="rpthead">Sales by month</div>
+          {months.map((m) => (
+            <BarRow key={m.label} label={m.label} val={m.total} max={maxMonth} currency={currency} />
+          ))}
+
+          <div className="rpthead">Low stock</div>
+          {lowStock.length ? (
+            lowStock.map((r) => (
+              <div className="listcard" key={r.sku}>
+                <div className="top">
+                  <b>{r.name}</b>
+                  <span className={`badge ${r.st <= 0 ? "b-Void" : "b-Open"}`}>{r.st <= 0 ? "OUT" : r.st + " left"}</span>
+                </div>
+                <div className="meta">
+                  {r.category} · SKU {r.sku}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="empty">Nothing low. Stock looks healthy. 📦</div>
+          )}
+
+          <div className="rpthead">Archived periods</div>
+          {archive.length ? (
+            archive.map((a) => (
+              <div className="listcard" key={a.id}>
+                <div className="top">
+                  <b>
+                    {a.period_type[0].toUpperCase() + a.period_type.slice(1)} of {new Date(a.period_start).toLocaleDateString()}
+                  </b>
+                  <span className="badge b-Paid">{money(a.total_sales, currency)}</span>
+                </div>
+                <div className="meta">
+                  {a.order_count} orders · Purchases {money(a.total_purchase, currency)} · Net profit {money(a.net_profit || 0, currency)}
+                </div>
+                {(a.top_products || []).map((p) => (
+                  <div key={p.sku} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
+                    <span>
+                      {p.name} — {p.boxes > 0 ? (p.each > 0 ? `${p.boxes} box${p.boxes === 1 ? "" : "es"} + ${p.each} EA` : `${p.boxes} box${p.boxes === 1 ? "" : "es"}`) : `${p.each} EA`}
+                    </span>
+                    <span>{money(p.total, currency)}</span>
+                  </div>
+                ))}
+              </div>
+            ))
+          ) : (
+            <div className="empty">Nothing archived yet — the first week/month/quarter close will appear here automatically.</div>
+          )}
+        </>
+      )}
+      {report && <CompiledReportModal report={report} onClose={() => setReport(null)} />}
+    </div>
+  );
+}
