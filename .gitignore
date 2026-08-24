@@ -36,6 +36,13 @@ yarn-error.log*
 # vercel
 .vercel
 
+# the old vanilla-JS app + source business files, kept alongside this repo
+# but not part of it — never accidentally track/push these.
+/mobile-pos-app/
+/mobile-pos-builder.skill
+/*.xlsm
+/.claude/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
