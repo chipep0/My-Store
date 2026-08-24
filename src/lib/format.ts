@@ -12,6 +12,24 @@ export function unitPriceFor(p: { sales_price: number; purchase_price: number; b
   return mode === "SALE" ? Number(p.sales_price || 0) : Number(p.purchase_price || 0);
 }
 
+export type StockClass = "in" | "low" | "out";
+
+/** The in/low/out threshold rule, shared by every screen that shows a stock badge. */
+export function stockClass(onHand: number | null | undefined, lowStock: number): StockClass {
+  if (onHand == null) return "in";
+  if (onHand <= 0) return "out";
+  if (onHand <= lowStock) return "low";
+  return "in";
+}
+
+export function stockBadgeVariant(cls: StockClass): string {
+  return cls === "out" ? "b-Void" : cls === "low" ? "b-Open" : "b-Paid";
+}
+
+export function stockTag(cls: StockClass): string {
+  return cls === "out" ? "OUT" : cls === "low" ? "LOW" : "OK";
+}
+
 export function qtyBoxLabel(unitsPerBox: number, totalEA: number): string {
   const upb = Math.max(1, Math.floor(unitsPerBox) || 1);
   if (upb <= 1) return `${totalEA} EA`;

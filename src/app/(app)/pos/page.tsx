@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useMemo, useState, useCallback } from "react";
-import { supabase } from "@/lib/supabase";
+import { useMemo, useState } from "react";
+import { guardedDelete } from "@/lib/db";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
+import { useCatalog, deriveCategories } from "@/hooks/useCatalog";
 import type { Product } from "@/lib/types";
 import ProductCard from "@/components/ProductCard";
 import ProductModal from "@/components/ProductModal";
@@ -10,36 +11,13 @@ import ProductModal from "@/components/ProductModal";
 export default function PosPage() {
   const { canPurchase, isManager } = useAuth();
   const { mode, setMode, addToCart } = useCart();
-  const [products, setProducts] = useState<Product[]>([]);
-  const [stock, setStock] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(true);
+  const { products, stock, loading, reload } = useCatalog();
   const [search, setSearch] = useState("");
   const [activeCat, setActiveCat] = useState("All");
   const [activeSub, setActiveSub] = useState("All");
   const [addOpen, setAddOpen] = useState(false);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    const [{ data: prods, error }, { data: inv }] = await Promise.all([
-      supabase
-        .from("posinv_products")
-        .select("sku,name,description,category,subcategory,sales_price,purchase_price,box_sales_price,box_purchase_price,units_per_box,image_url")
-        .eq("active", true)
-        .order("name"),
-      supabase.from("posinv_inventory").select("sku,on_hand"),
-    ]);
-    if (!error) setProducts(prods || []);
-    const s: Record<string, number> = {};
-    (inv || []).forEach((r) => (s[r.sku] = Number(r.on_hand)));
-    setStock(s);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  const categories = useMemo(() => ["All", ...Array.from(new Set(products.map((p) => p.category).filter(Boolean) as string[]))], [products]);
+  const categories = useMemo(() => ["All", ...deriveCategories(products)], [products]);
   const subcategories = useMemo(() => {
     if (activeCat === "All") return [];
     return ["All", ...Array.from(new Set(products.filter((p) => p.category === activeCat).map((p) => p.subcategory).filter(Boolean) as string[]))];
@@ -62,10 +40,9 @@ export default function PosPage() {
 
   const deleteProduct = async (p: Product) => {
     if (!confirm(`Delete "${p.name}" from the catalog?\n\nPast sales/purchase history is kept — only the product listing is removed.`)) return;
-    const { data, error } = await supabase.from("posinv_products").delete().eq("sku", p.sku).select("sku");
-    if (error) return alert("Could not delete: " + error.message);
-    if (!data || data.length === 0) return alert("Nothing was deleted — this account may not have permission (deleting products is Manager-only).");
-    loadData();
+    const res = await guardedDelete("posinv_products", "sku", p.sku, "deleting products");
+    if (!res.ok) return alert(res.error);
+    reload();
   };
 
   return (
@@ -130,11 +107,11 @@ export default function PosPage() {
       </div>
       {addOpen && (
         <ProductModal
-          knownCategories={Array.from(new Set(products.map((p) => p.category).filter(Boolean) as string[]))}
+          knownCategories={deriveCategories(products)}
           onClose={() => setAddOpen(false)}
           onSaved={(sku) => {
             setAddOpen(false);
-            loadData();
+            reload();
             const p = products.find((x) => x.sku === sku);
             if (p) addToCart(p, "EA");
           }}

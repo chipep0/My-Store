@@ -1,7 +1,7 @@
 "use client";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useCart } from "@/contexts/CartContext";
-import { money, unitPriceFor } from "@/lib/format";
+import { money, unitPriceFor, stockClass } from "@/lib/format";
 import type { Product } from "@/lib/types";
 
 const CAT_TILE: Record<string, string> = {
@@ -36,9 +36,7 @@ export default function ProductCard({
   const { settings } = useSettings();
   const { mode, addToCart } = useCart();
   const upb = Math.max(1, Math.floor(product.units_per_box) || 1);
-  let cls = "in";
-  if (onHand != null && onHand <= 0) cls = "out";
-  else if (onHand != null && onHand <= settings.low_stock) cls = "low";
+  const cls = stockClass(onHand, settings.low_stock);
   const eaTxt = onHand == null ? "" : cls === "out" ? "Out of stock" : `${onHand} in stock`;
   const boxTxt = onHand == null ? "" : cls === "out" ? "Out of stock" : `${Math.floor(onHand / upb)} boxes`;
 

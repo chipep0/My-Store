@@ -1,6 +1,7 @@
 "use client";
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { guardedUpdate } from "@/lib/db";
 import type { StoreSettings } from "@/lib/types";
 
 const DEFAULTS: StoreSettings = {
@@ -41,9 +42,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   const save = async (patch: Partial<StoreSettings>) => {
     const next = { ...settings, ...patch };
-    const { data, error } = await supabase.from("posinv_settings").update(patch).eq("id", 1).select("id");
-    if (error) return { error: error.message };
-    if (!data || data.length === 0) return { error: "Nothing was saved — this account may not have permission (Settings is Manager-only)." };
+    const res = await guardedUpdate("posinv_settings", "id", 1, patch, "Settings");
+    if (!res.ok) return { error: res.error };
     setSettings(next);
     return {};
   };

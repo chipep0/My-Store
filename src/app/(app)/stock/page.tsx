@@ -1,11 +1,12 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { guardedDelete } from "@/lib/db";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useCart } from "@/contexts/CartContext";
-import { money, unitPriceFor } from "@/lib/format";
+import { useCatalog, deriveCategories } from "@/hooks/useCatalog";
+import { money, unitPriceFor, stockClass, stockBadgeVariant, stockTag } from "@/lib/format";
 import type { Product } from "@/lib/types";
 import ProductModal from "@/components/ProductModal";
 
@@ -13,33 +14,10 @@ export default function StockPage() {
   const { isManager, canPurchase } = useAuth();
   const { settings } = useSettings();
   const { setMode, addToCart } = useCart();
+  const { products, stock, loading, reload } = useCatalog();
   const router = useRouter();
-  const [products, setProducts] = useState<Product[]>([]);
-  const [stock, setStock] = useState<Record<string, number>>({});
   const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<"add" | Product | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    const [{ data: prods }, { data: inv }] = await Promise.all([
-      supabase
-        .from("posinv_products")
-        .select("sku,name,description,category,subcategory,sales_price,purchase_price,box_sales_price,box_purchase_price,units_per_box,image_url")
-        .eq("active", true)
-        .order("name"),
-      supabase.from("posinv_inventory").select("sku,on_hand"),
-    ]);
-    setProducts(prods || []);
-    const s: Record<string, number> = {};
-    (inv || []).forEach((r) => (s[r.sku] = Number(r.on_hand)));
-    setStock(s);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    load();
-  }, [load]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -54,13 +32,10 @@ export default function StockPage() {
 
   const deleteProduct = async (p: Product) => {
     if (!confirm(`Delete "${p.name}" from the catalog?\n\nPast sales/purchase history is kept — only the product listing is removed.`)) return;
-    const { data, error } = await supabase.from("posinv_products").delete().eq("sku", p.sku).select("sku");
-    if (error) return alert("Could not delete: " + error.message);
-    if (!data || data.length === 0) return alert("Nothing was deleted — this account may not have permission (deleting products is Manager-only).");
-    load();
+    const res = await guardedDelete("posinv_products", "sku", p.sku, "deleting products");
+    if (!res.ok) return alert(res.error);
+    reload();
   };
-
-  const knownCategories = Array.from(new Set(products.map((p) => p.category).filter(Boolean) as string[]));
 
   return (
     <div className="view">
@@ -86,22 +61,14 @@ export default function StockPage() {
         filtered.map((p) => {
           const st = stock[p.sku];
           const upb = Math.max(1, Math.floor(p.units_per_box) || 1);
-          let cls = "in",
-            tag = "OK";
-          if (st != null && st <= 0) {
-            cls = "out";
-            tag = "OUT";
-          } else if (st != null && st <= settings.low_stock) {
-            cls = "low";
-            tag = "LOW";
-          }
-          const badge = cls === "out" ? "b-Void" : cls === "low" ? "b-Open" : "b-Paid";
-          const stTxt = st == null ? "—" : `${st} EA${upb > 1 ? ` (${Math.floor(st / upb)} box${Math.floor(st / upb) === 1 ? "" : "es"})` : ""}`;
+          const cls = stockClass(st, settings.low_stock);
+          const boxes = st != null ? Math.floor(st / upb) : 0;
+          const stTxt = st == null ? "—" : `${st} EA${upb > 1 ? ` (${boxes} box${boxes === 1 ? "" : "es"})` : ""}`;
           return (
             <div className="listcard" key={p.sku}>
               <div className="top">
                 <b>{p.name}</b>
-                <span className={`badge ${badge}`}>{tag}</span>
+                <span className={`badge ${stockBadgeVariant(cls)}`}>{stockTag(cls)}</span>
               </div>
               <div className="meta">
                 {p.category || "—"}
@@ -135,11 +102,11 @@ export default function StockPage() {
       {modal && (
         <ProductModal
           editProduct={modal === "add" ? null : modal}
-          knownCategories={knownCategories}
+          knownCategories={deriveCategories(products)}
           onClose={() => setModal(null)}
           onSaved={() => {
             setModal(null);
-            load();
+            reload();
           }}
         />
       )}

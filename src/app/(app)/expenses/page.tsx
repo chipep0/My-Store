@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { guardedDelete } from "@/lib/db";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { money } from "@/lib/format";
@@ -51,12 +52,8 @@ export default function ExpensesPage() {
 
   const deleteExpense = async (id: number) => {
     if (!confirm("Delete this expense?")) return;
-    const { data, error } = await supabase.from("posinv_expenses").delete().eq("id", id).select("id");
-    if (error) return alert(error.message);
-    if (!data || data.length === 0) {
-      alert("Nothing was deleted — this account may not have permission (deleting expenses is Manager-only).");
-      return;
-    }
+    const res = await guardedDelete("posinv_expenses", "id", id, "deleting expenses");
+    if (!res.ok) return alert(res.error);
     load();
   };
 

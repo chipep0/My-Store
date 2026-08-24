@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { guardedUpdate } from "@/lib/db";
 import type { Product } from "@/lib/types";
 
 const SEED_CATS = ["Coffee", "Tea", "Sweets", "Powder", "Paste"];
@@ -93,9 +94,8 @@ export default function ProductModal({
         image_url,
       };
       if (editing) {
-        const { data, error } = await supabase.from("posinv_products").update(fields).eq("sku", editProduct!.sku).select("sku");
-        if (error) throw error;
-        if (!data || data.length === 0) throw new Error("Nothing was saved — this account may not have permission (editing products is Manager-only).");
+        const res = await guardedUpdate("posinv_products", "sku", editProduct!.sku, fields, "editing products");
+        if (!res.ok) throw new Error(res.error);
       } else {
         const { error } = await supabase.from("posinv_products").insert({ sku: sku.trim(), ...fields, opening_stock: totalUnits });
         if (error) throw error;
