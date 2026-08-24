@@ -68,27 +68,38 @@ export default function SettingsPage() {
     alert(`${res.data.length} product(s) deleted.`);
   };
 
-  const deleteOrdersForDate = async () => {
+  const deleteEverythingForDate = async () => {
     if (!deleteDate) return alert("Pick a date first.");
     const start = new Date(deleteDate + "T00:00:00");
     const end = new Date(deleteDate + "T23:59:59.999");
-    const { count } = await supabase
-      .from("posinv_orders")
-      .select("id", { count: "exact", head: true })
-      .gte("order_on", start.toISOString())
-      .lte("order_on", end.toISOString());
-    if (!count) return alert("No orders (sales or purchases) found on that date.");
+    const [{ count: orderCount }, { count: expCount }, { count: incCount }] = await Promise.all([
+      supabase.from("posinv_orders").select("id", { count: "exact", head: true }).gte("order_on", start.toISOString()).lte("order_on", end.toISOString()),
+      supabase.from("posinv_expenses").select("id", { count: "exact", head: true }).eq("expense_on", deleteDate),
+      supabase.from("posinv_other_income").select("id", { count: "exact", head: true }).eq("received_on", deleteDate),
+    ]);
+    const orders = orderCount || 0;
+    const expenses = expCount || 0;
+    const income = incCount || 0;
+    if (!orders && !expenses && !income) return alert("Nothing found on that date — no orders, expenses, or other income.");
     const typed = prompt(
-      `This permanently deletes ${count} order(s) — sales AND purchases — from ${start.toLocaleDateString()}, along with their line items and any debt/payment history. Refunds/voids on other dates are unaffected. This cannot be undone. Type DELETE to confirm.`
+      `This permanently deletes everything dated ${start.toLocaleDateString()}: ${orders} order(s) (sales & purchases, with their line items and debt/payment history), ${expenses} expense(s), and ${income} other income entr${income === 1 ? "y" : "ies"}. Refunds/voids and entries on other dates are unaffected. This cannot be undone. Type DELETE to confirm.`
     );
     if (typed !== "DELETE") return;
-    const res = await guardedMutation(
-      supabase.from("posinv_orders").delete().gte("order_on", start.toISOString()).lte("order_on", end.toISOString()).select("id"),
-      "deleted",
-      "Delete orders for a date"
-    );
-    if (!res.ok) return alert(res.error);
-    alert(`${res.data.length} order(s) deleted.`);
+
+    const [orderRes, expRes, incRes] = await Promise.all([
+      orders
+        ? guardedMutation(supabase.from("posinv_orders").delete().gte("order_on", start.toISOString()).lte("order_on", end.toISOString()).select("id"), "deleted", "Delete orders for a date")
+        : Promise.resolve({ ok: true, data: [] as unknown[] }),
+      expenses
+        ? guardedMutation(supabase.from("posinv_expenses").delete().eq("expense_on", deleteDate).select("id"), "deleted", "Delete expenses for a date")
+        : Promise.resolve({ ok: true, data: [] as unknown[] }),
+      income
+        ? guardedMutation(supabase.from("posinv_other_income").delete().eq("received_on", deleteDate).select("id"), "deleted", "Delete other income for a date")
+        : Promise.resolve({ ok: true, data: [] as unknown[] }),
+    ]);
+    const errors = [orderRes, expRes, incRes].filter((r) => !r.ok).map((r) => ("error" in r ? r.error : "")).filter(Boolean);
+    if (errors.length) return alert("Some deletions failed: " + errors.join(" | "));
+    alert(`Deleted: ${orderRes.data.length} order(s), ${expRes.data.length} expense(s), ${incRes.data.length} other income entr${incRes.data.length === 1 ? "y" : "ies"}.`);
     setDeleteDate("");
   };
 
@@ -179,14 +190,14 @@ export default function SettingsPage() {
             <div style={{ height: 1, background: "var(--line, #eee)", margin: "16px 0" }} />
 
             <div style={{ color: "var(--muted)", fontSize: 12, margin: "0 0 10px" }}>
-              Permanently deletes every order — sales and purchases — dated on a specific day (and any linked debt/payment
-              records). Use this to wipe bad or test data. For a normal mistaken sale, prefer Refund/Void from Orders instead —
-              this keeps no record at all.
+              Permanently deletes everything dated on a specific day: orders (sales & purchases, with any linked debt/payment
+              records), expenses, and other income. Use this to wipe bad or test data for a whole day at once. For a normal
+              mistaken sale, prefer Refund/Void from Orders instead — this keeps no record at all.
             </div>
             <label>Date to wipe</label>
             <input type="date" value={deleteDate} onChange={(e) => setDeleteDate(e.target.value)} />
-            <button className="btn sec" style={{ borderColor: "var(--danger)", color: "var(--danger)", marginTop: 10 }} onClick={deleteOrdersForDate}>
-              Delete orders for this date
+            <button className="btn sec" style={{ borderColor: "var(--danger)", color: "var(--danger)", marginTop: 10 }} onClick={deleteEverythingForDate}>
+              Delete everything for this date
             </button>
           </div>
         </>
