@@ -207,9 +207,9 @@ function AddExpenseModal({ onClose, onSaved }: { onClose: () => void; onSaved: (
         <label>Date</label>
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         <label>Category</label>
-        <input value={category} onChange={(e) => setCategory(e.target.value)} list="expCatList" placeholder="e.g. Rent" />
+        <input value={category} onChange={(e) => setCategory(e.target.value)} list="expCatList" placeholder="e.g. Transport" />
         <datalist id="expCatList">
-          {["Rent", "Utilities", "Supplies", "Transport", "Salaries", "Other"].map((c) => (
+          {["Transaction Fee", "Transport", "Supplies", "Other"].map((c) => (
             <option key={c} value={c} />
           ))}
         </datalist>
