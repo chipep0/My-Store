@@ -9,9 +9,11 @@ export interface CompiledReport {
   totalSales: number;
   totalPurch: number;
   totalExpenses: number;
+  totalOtherIncome: number;
   showPurchases: boolean;
   products: { name: string; sku: string; total: number; qty: number; unitsPerBox: number }[];
   expenseLines: { category: string; description: string | null; amount: number }[];
+  otherIncomeLines: { category: string; recipient: string | null; description: string | null; amount: number }[];
   purchases: { name: string; sku: string; total: number; qty: number; unitsPerBox: number }[];
 }
 
@@ -19,7 +21,8 @@ export default function CompiledReportModal({ report, onClose }: { report: Compi
   const { settings } = useSettings();
   const currency = settings.currency;
   const profit = report.totalSales - report.totalPurch;
-  const netProfit = (report.showPurchases ? profit : report.totalSales) - report.totalExpenses;
+  const totalRevenue = report.totalSales + report.totalOtherIncome;
+  const netProfit = (report.showPurchases ? profit : report.totalSales) - report.totalExpenses + report.totalOtherIncome;
 
   return (
     <div className="modal" id="reportModal">
@@ -41,9 +44,21 @@ export default function CompiledReportModal({ report, onClose }: { report: Compi
                 <td className="tr">{report.orderCount}</td>
               </tr>
               <tr>
-                <td>Total sales</td>
+                <td>Total sales (cash at hand)</td>
                 <td className="tr">{money(report.totalSales, currency)}</td>
               </tr>
+              {report.totalOtherIncome > 0 && (
+                <>
+                  <tr>
+                    <td>Other income (sent directly)</td>
+                    <td className="tr">{money(report.totalOtherIncome, currency)}</td>
+                  </tr>
+                  <tr>
+                    <td>Total revenue</td>
+                    <td className="tr">{money(totalRevenue, currency)}</td>
+                  </tr>
+                </>
+              )}
               {report.showPurchases && (
                 <>
                   <tr>
@@ -118,6 +133,36 @@ export default function CompiledReportModal({ report, onClose }: { report: Compi
               )}
             </tbody>
           </table>
+          {report.otherIncomeLines.length > 0 && (
+            <>
+              <hr />
+              <div className="c">Other income (sent directly, not cash)</div>
+              <table>
+                <tbody>
+                  {report.otherIncomeLines.map((x, i) => (
+                    <tr key={i}>
+                      <td>
+                        {x.category}
+                        {x.recipient && (
+                          <>
+                            <br />
+                            <span style={{ color: "#888", fontSize: 11 }}>Sent to: {x.recipient}</span>
+                          </>
+                        )}
+                        {x.description && (
+                          <>
+                            <br />
+                            <span style={{ color: "#888", fontSize: 11 }}>{x.description}</span>
+                          </>
+                        )}
+                      </td>
+                      <td className="tr">{money(x.amount, currency)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
           {report.showPurchases && (
             <>
               <hr />

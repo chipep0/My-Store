@@ -73,6 +73,15 @@ export interface Expense {
   amount: number;
 }
 
+export interface OtherIncome {
+  id: number;
+  received_on: string;
+  category: string;
+  recipient: string | null;
+  description: string | null;
+  amount: number;
+}
+
 export interface AppUser {
   id: string;
   name: string;
