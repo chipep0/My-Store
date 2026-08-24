@@ -89,6 +89,7 @@ export interface OtherIncome {
   recipient: string | null;
   description: string | null;
   amount: number;
+  deduct_from_sales: boolean;
 }
 
 export interface AppUser {

@@ -22,7 +22,7 @@ export default function ExpensesPage() {
     setLoading(true);
     const [{ data: exp }, { data: inc }] = await Promise.all([
       supabase.from("posinv_expenses").select("id,expense_on,category,description,amount").order("expense_on", { ascending: false }).limit(300),
-      supabase.from("posinv_other_income").select("id,received_on,category,recipient,description,amount").order("received_on", { ascending: false }).limit(300),
+      supabase.from("posinv_other_income").select("id,received_on,category,recipient,description,amount,deduct_from_sales").order("received_on", { ascending: false }).limit(300),
     ]);
     setExpenses(exp || []);
     setIncome(inc || []);
@@ -135,6 +135,7 @@ export default function ExpensesPage() {
                   {new Date(x.received_on).toLocaleDateString()}
                   {x.recipient ? " · Sent to: " + x.recipient : ""}
                   {x.description ? " · " + x.description : ""}
+                  {x.deduct_from_sales ? " · − Deducted from Total sales" : ""}
                 </div>
                 <div className="acts">
                   <button className="act-void" onClick={() => deleteIncome(x.id)}>
@@ -234,6 +235,7 @@ function AddIncomeModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
   const [recipient, setRecipient] = useState("");
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
+  const [deductFromSales, setDeductFromSales] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -250,6 +252,7 @@ function AddIncomeModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
         recipient: recipient.trim(),
         description: description.trim(),
         amount: amt,
+        deduct_from_sales: deductFromSales,
         created_by: user?.id,
       });
       if (error) throw error;
@@ -280,7 +283,18 @@ function AddIncomeModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
         <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="e.g. Payment for wholesale order #12" />
         <label>Amount</label>
         <input type="number" step="0.01" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
-        <button className="checkout" style={{ background: "var(--teal)" }} disabled={saving} onClick={save}>
+
+        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14 }}>
+          <input type="checkbox" className="chk" checked={deductFromSales} onChange={(e) => setDeductFromSales(e.target.checked)} />
+          <span style={{ textTransform: "none", fontWeight: 600, color: "var(--ink)" }}>Deduct from that day&apos;s Total sales</span>
+        </label>
+        <div style={{ color: "var(--muted)", fontSize: 12, margin: "4px 2px 0" }}>
+          Turn this on if this money was already rung up as a sale but actually went straight to an account/person instead of
+          the till — it subtracts this amount from Total sales &amp; Cash at hand so that figure isn&apos;t overstated. Net profit
+          is unaffected either way.
+        </div>
+
+        <button className="checkout" style={{ background: "var(--teal)", marginTop: 14 }} disabled={saving} onClick={save}>
           {saving ? "Saving…" : "Save income"}
         </button>
         <button className="btn sec" onClick={onClose}>

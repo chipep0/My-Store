@@ -10,11 +10,12 @@ export interface CompiledReport {
   totalPurch: number;
   totalExpenses: number;
   totalOtherIncome: number;
+  totalOtherIncomeDeducted: number;
   totalOutstandingDebt: number;
   showPurchases: boolean;
   products: { name: string; sku: string; total: number; qty: number; unitsPerBox: number }[];
   expenseLines: { category: string; description: string | null; amount: number }[];
-  otherIncomeLines: { category: string; recipient: string | null; description: string | null; amount: number }[];
+  otherIncomeLines: { category: string; recipient: string | null; description: string | null; amount: number; deduct_from_sales: boolean }[];
   purchases: { name: string; sku: string; total: number; qty: number; unitsPerBox: number }[];
 }
 
@@ -22,13 +23,16 @@ export default function CompiledReportModal({ report, onClose }: { report: Compi
   const { settings } = useSettings();
   const currency = settings.currency;
   // Total sales = till/register revenue only — Other Income never counts
-  // toward it, since it never touched the till. Cash at hand backs out
-  // Expenses too (assumed paid out of that same till cash), and also backs
-  // out unpaid credit sales — a debt counts toward Total sales the moment
-  // it's rung up, but isn't cash until it's actually collected. Net profit
-  // is the one figure that still adds Other Income back in, since it's real
-  // revenue for the true bottom line even though it's not cash on hand.
-  const totalSales = report.posSales;
+  // toward it, since it never touched the till, EXCEPT an entry flagged
+  // "deduct from sales" (money that WAS already rung up as a POS sale but
+  // actually left/never reached the till), which subtracts back out. Cash
+  // at hand backs out Expenses too (assumed paid out of that same till
+  // cash), and also backs out unpaid credit sales — a debt counts toward
+  // Total sales the moment it's rung up, but isn't cash until collected.
+  // Net profit still adds the FULL Other Income total back in regardless
+  // of the deduct flag, so a deducted entry's subtract-then-add-back nets
+  // to zero there — it's real revenue for the bottom line either way.
+  const totalSales = report.posSales - report.totalOtherIncomeDeducted;
   const cashAtHand = totalSales - report.totalExpenses - report.totalOutstandingDebt;
   const profit = totalSales - report.totalPurch;
   const netProfit = (report.showPurchases ? profit : totalSales) - report.totalExpenses + report.totalOtherIncome;
@@ -60,6 +64,12 @@ export default function CompiledReportModal({ report, onClose }: { report: Compi
                 <tr>
                   <td>Other income (sent directly)</td>
                   <td className="tr">{money(report.totalOtherIncome, currency)}</td>
+                </tr>
+              )}
+              {report.totalOtherIncomeDeducted > 0 && (
+                <tr>
+                  <td>Deducted from sales</td>
+                  <td className="tr">−{money(report.totalOtherIncomeDeducted, currency)}</td>
                 </tr>
               )}
               <tr>
@@ -166,6 +176,12 @@ export default function CompiledReportModal({ report, onClose }: { report: Compi
                           <>
                             <br />
                             <span style={{ color: "#888", fontSize: 11 }}>{x.description}</span>
+                          </>
+                        )}
+                        {x.deduct_from_sales && (
+                          <>
+                            <br />
+                            <span style={{ color: "#888", fontSize: 11 }}>− deducted from Total sales</span>
                           </>
                         )}
                       </td>
