@@ -28,6 +28,7 @@ interface CartState {
   lineTotal: (line: CartLine) => number;
   customers: string[];
   vendors: string[];
+  addParty: (name: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
 const CartCtx = createContext<CartState | null>(null);
@@ -52,6 +53,27 @@ export function CartProvider({ children }: { children: ReactNode }) {
       .order("name")
       .then(({ data }) => setVendors((data || []).map((v) => v.name)));
   }, []);
+
+  const addParty = useCallback(async (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return { ok: false, error: "Enter a name." };
+    const table = mode === "SALE" ? "posinv_customers" : "posinv_vendors";
+    const { error } = await supabase.from(table).insert({ name: trimmed });
+    if (error) {
+      if (error.code === "23505") {
+        // Already exists — just select it, not a real failure.
+      } else {
+        return { ok: false, error: error.message };
+      }
+    }
+    if (mode === "SALE") {
+      setCustomers((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed].sort()));
+    } else {
+      setVendors((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed].sort()));
+    }
+    setParty(trimmed);
+    return { ok: true };
+  }, [mode]);
 
   const setMode = useCallback((m: OrderType) => {
     setModeRaw(m);
@@ -117,7 +139,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const count = lines.reduce((n, l) => n + l.qty, 0);
 
   return (
-    <CartCtx.Provider value={{ mode, setMode, party, setParty, lines, addToCart, changeQty, setDisc, clear, count, totals, lineTotal, customers, vendors }}>
+    <CartCtx.Provider value={{ mode, setMode, party, setParty, lines, addToCart, changeQty, setDisc, clear, count, totals, lineTotal, customers, vendors, addParty }}>
       {children}
     </CartCtx.Provider>
   );

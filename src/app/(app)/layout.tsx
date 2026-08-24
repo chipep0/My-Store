@@ -20,10 +20,11 @@ const NAV = [
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { session, loading, cashier, role, isManager, signOut } = useAuth();
   const { settings } = useSettings();
-  const { mode, party, setParty, customers, vendors, lines, count, totals, lineTotal } = useCart();
+  const { mode, party, setParty, customers, vendors, addParty, lines, count, totals, lineTotal } = useCart();
   const router = useRouter();
   const pathname = usePathname();
   const [cartOpen, setCartOpen] = useState(false);
+  const [addPartyOpen, setAddPartyOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && !session) router.replace("/");
@@ -50,11 +51,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {pathname === "/pos" && (
         <div className="modebar">
           <div className="party">
-            <select value={party} onChange={(e) => setParty(e.target.value)}>
+            <select
+              value={party}
+              onChange={(e) => {
+                if (e.target.value === "__new__") setAddPartyOpen(true);
+                else setParty(e.target.value);
+              }}
+            >
               <option value="">{mode === "SALE" ? "Walk-in customer" : "Select vendor"}</option>
               {(mode === "SALE" ? customers : vendors).map((n) => (
                 <option key={n}>{n}</option>
               ))}
+              <option value="__new__">➕ Add new {mode === "SALE" ? "customer" : "vendor"}…</option>
             </select>
           </div>
         </div>
@@ -104,6 +112,52 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </Link>
         ))}
       </nav>
+
+      {addPartyOpen && (
+        <AddPartyModal
+          label={mode === "SALE" ? "customer" : "vendor"}
+          onCancel={() => setAddPartyOpen(false)}
+          onSave={async (name) => {
+            const res = await addParty(name);
+            if (!res.ok) {
+              alert("Could not add: " + res.error);
+              return;
+            }
+            setAddPartyOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function AddPartyModal({ label, onCancel, onSave }: { label: string; onCancel: () => void; onSave: (name: string) => Promise<void> }) {
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!name.trim()) return alert(`Enter the ${label}'s name.`);
+    setSaving(true);
+    try {
+      await onSave(name);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal">
+      <div className="mbox">
+        <h3>Add new {label}</h3>
+        <label>Name</label>
+        <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={`e.g. ${label === "customer" ? "Jane Doe" : "ABC Suppliers"}`} />
+        <button className="checkout" style={{ background: "var(--teal)" }} disabled={saving} onClick={save}>
+          {saving ? "Saving…" : `Save ${label}`}
+        </button>
+        <button className="btn sec" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
