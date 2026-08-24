@@ -30,7 +30,7 @@ function BarRow({ label, val, max, currency, sub }: { label: string; val: number
 
 export default function ReportsPage() {
   const { settings } = useSettings();
-  const { canPurchase } = useAuth();
+  const { canPurchase, isManager } = useAuth();
   const { setMode, addToCart, openCart } = useCart();
   const router = useRouter();
   const currency = settings.currency;
@@ -41,6 +41,7 @@ export default function ReportsPage() {
   const [months, setMonths] = useState<{ label: string; total: number }[]>([]);
   const [lowStock, setLowStock] = useState<{ sku: string; name: string; category: string | null; st: number }[]>([]);
   const [archive, setArchive] = useState<PeriodArchive[]>([]);
+  const [refreshingId, setRefreshingId] = useState<number | null>(null);
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [report, setReport] = useState<CompiledReport | null>(null);
@@ -225,6 +226,19 @@ export default function ReportsPage() {
     compile(s, e, "DATE RANGE REPORT", from === toVal ? s.toLocaleDateString() : `${s.toLocaleDateString()} – ${e.toLocaleDateString()}`);
   };
 
+  const refreshArchive = async (a: PeriodArchive) => {
+    setRefreshingId(a.id);
+    try {
+      const { error } = await supabase.rpc("posinv_archive_period", { p_type: a.period_type, p_start: a.period_start, p_end: a.period_end });
+      if (error) throw error;
+      await loadDashboard();
+    } catch (err) {
+      alert("Could not refresh: " + (err instanceof Error ? err.message : String(err)) + " — run supabase/23_refresh_archive.sql first.");
+    } finally {
+      setRefreshingId(null);
+    }
+  };
+
   const restockLow = async (sku: string) => {
     const { data: p, error } = await supabase.from("posinv_products").select("*").eq("sku", sku).single();
     if (error || !p) return alert("Could not load that product.");
@@ -369,6 +383,12 @@ export default function ReportsPage() {
           )}
 
           <div className="rpthead">Archived periods</div>
+          {archive.length > 0 && (
+            <div style={{ color: "var(--muted)", fontSize: 12, margin: "-6px 4px 10px" }}>
+              These totals lock in when a week/month/quarter closes, so editing or deleting something dated inside an
+              already-closed period won&apos;t update it here on its own — use Refresh totals to recompute one.
+            </div>
+          )}
           {archive.length ? (
             archive.map((a) => (
               <div className="listcard" key={a.id}>
@@ -379,7 +399,8 @@ export default function ReportsPage() {
                   <span className="badge b-Paid">{money(a.total_sales, currency)}</span>
                 </div>
                 <div className="meta">
-                  {a.order_count} orders · Purchases {money(a.total_purchase, currency)} · Net profit {money(a.net_profit || 0, currency)}
+                  {a.order_count} orders · Purchases {money(a.total_purchase, currency)} · Expenses {money(a.total_expenses || 0, currency)} · Net profit{" "}
+                  {money(a.net_profit || 0, currency)}
                 </div>
                 {(a.top_products || []).map((p) => (
                   <div key={p.sku} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
@@ -389,6 +410,13 @@ export default function ReportsPage() {
                     <span>{money(p.total, currency)}</span>
                   </div>
                 ))}
+                {isManager && (
+                  <div className="acts">
+                    <button className="act-edit" disabled={refreshingId === a.id} onClick={() => refreshArchive(a)}>
+                      {refreshingId === a.id ? "Refreshing…" : "🔄 Refresh totals"}
+                    </button>
+                  </div>
+                )}
               </div>
             ))
           ) : (
