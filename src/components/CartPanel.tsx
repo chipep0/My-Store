@@ -15,6 +15,7 @@ export default function CartPanel({ open, onClose }: { open: boolean; onClose: (
   const [tenderOpen, setTenderOpen] = useState(false);
   const [receipt, setReceipt] = useState<ReceiptData | null>(null);
   const [busy, setBusy] = useState(false);
+  const [orderDate, setOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
   const currency = settings.currency;
 
   const finalize = async (tendered: number) => {
@@ -22,11 +23,21 @@ export default function CartPanel({ open, onClose }: { open: boolean; onClose: (
     setBusy(true);
     try {
       const partyName = party || (mode === "SALE" ? "Walk-in" : "Supplier");
-      const { data: order, error: oe } = await supabase
-        .from("posinv_orders")
-        .insert({ type: mode, status: "Paid", party: partyName, user_name: cashier, total_paid: Math.round(totals.grand * 100) / 100, created_by: session?.user.id })
-        .select("id,order_on")
-        .single();
+      const orderPayload: Record<string, unknown> = {
+        type: mode,
+        status: "Paid",
+        party: partyName,
+        user_name: cashier,
+        total_paid: Math.round(totals.grand * 100) / 100,
+        created_by: session?.user.id,
+      };
+      if (settings.backdate_enabled && orderDate) {
+        const [y, mo, d] = orderDate.split("-").map(Number);
+        const dt = new Date();
+        dt.setFullYear(y, mo - 1, d);
+        orderPayload.order_on = dt.toISOString();
+      }
+      const { data: order, error: oe } = await supabase.from("posinv_orders").insert(orderPayload).select("id,order_on").single();
       if (oe) throw oe;
 
       const items = lines.map((l) => {
@@ -78,6 +89,12 @@ export default function CartPanel({ open, onClose }: { open: boolean; onClose: (
             {mode === "SALE" ? "Current sale " : "Purchase / restock "}
             <button onClick={onClose}>×</button>
           </h3>
+          {settings.backdate_enabled && (
+            <div style={{ padding: "0 16px 12px" }}>
+              <label>Order date</label>
+              <input type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
+            </div>
+          )}
           <div className="items">
             {lines.length === 0 ? (
               <div className="empty">Cart is empty. Tap a product to add it.</div>
