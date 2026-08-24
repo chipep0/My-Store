@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useCart } from "@/contexts/CartContext";
-import { money, signedMoney, qtyBoxLabel } from "@/lib/format";
+import { money, signedMoney, qtyBoxLabel, localDateStr } from "@/lib/format";
 import type { PeriodArchive } from "@/lib/types";
 import CompiledReportModal, { CompiledReport } from "@/components/CompiledReportModal";
 
@@ -56,8 +56,8 @@ export default function ReportsPage() {
     const [{ data: orders }, { data: items }, { data: expenses }, { data: otherIncome }, { data: prods }, { data: inv }, { data: arch }] = await Promise.all([
       supabase.from("posinv_orders").select("id,order_on,type,status,balance_due").gte("order_on", since.toISOString()),
       supabase.from("posinv_order_items").select("order_id,sku,product_name,line_total,base_qty"),
-      supabase.from("posinv_expenses").select("amount").gte("expense_on", since.toISOString().slice(0, 10)),
-      supabase.from("posinv_other_income").select("amount").gte("received_on", since.toISOString().slice(0, 10)),
+      supabase.from("posinv_expenses").select("amount").gte("expense_on", localDateStr(since)),
+      supabase.from("posinv_other_income").select("amount").gte("received_on", localDateStr(since)),
       supabase.from("posinv_products").select("sku,name,category,units_per_box,active"),
       supabase.from("posinv_inventory").select("sku,on_hand"),
       supabase.from("posinv_period_archive").select("*").order("period_start", { ascending: false }).limit(20),
@@ -139,8 +139,8 @@ export default function ReportsPage() {
     const [{ data: orders, error: oe }, { data: items, error: ie }, { data: expenses, error: ee }, { data: otherIncome, error: oie }, { data: prods }] = await Promise.all([
       supabase.from("posinv_orders").select("id,order_on,type,status,balance_due").gte("order_on", start.toISOString()).lte("order_on", end.toISOString()),
       supabase.from("posinv_order_items").select("order_id,sku,product_name,line_total,base_qty"),
-      supabase.from("posinv_expenses").select("category,description,amount").gte("expense_on", start.toISOString().slice(0, 10)).lte("expense_on", end.toISOString().slice(0, 10)),
-      supabase.from("posinv_other_income").select("category,recipient,description,amount").gte("received_on", start.toISOString().slice(0, 10)).lte("received_on", end.toISOString().slice(0, 10)),
+      supabase.from("posinv_expenses").select("category,description,amount").gte("expense_on", localDateStr(start)).lte("expense_on", localDateStr(end)),
+      supabase.from("posinv_other_income").select("category,recipient,description,amount").gte("received_on", localDateStr(start)).lte("received_on", localDateStr(end)),
       supabase.from("posinv_products").select("sku,units_per_box"),
     ]);
     if (oe || ie || ee || oie) return alert("Could not compile report: " + (oe || ie || ee || oie)?.message);

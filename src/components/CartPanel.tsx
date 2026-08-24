@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useCart } from "@/contexts/CartContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { money } from "@/lib/format";
+import { money, localDateStr } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
 import ReceiptModal, { ReceiptData } from "@/components/ReceiptModal";
 import TenderModal from "@/components/TenderModal";
@@ -15,7 +15,7 @@ export default function CartPanel({ open, onClose }: { open: boolean; onClose: (
   const [tenderOpen, setTenderOpen] = useState(false);
   const [receipt, setReceipt] = useState<ReceiptData | null>(null);
   const [busy, setBusy] = useState(false);
-  const [orderDate, setOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [orderDate, setOrderDate] = useState(() => localDateStr(new Date()));
   const currency = settings.currency;
 
   const finalize = async (tendered: number) => {

@@ -1,3 +1,11 @@
+/** Local calendar date as "YYYY-MM-DD" — NOT date.toISOString().slice(0,10),
+ * which converts to UTC first and silently shifts a day for any timezone
+ * ahead of UTC (e.g. CAT), corrupting date-only DB columns and date-input
+ * defaults during the first couple hours of each local day. */
+export function localDateStr(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export function money(n: number, currency: string): string {
   const rounded = Math.round(n * 100) / 100;
   return currency + rounded.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

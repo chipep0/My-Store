@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { guardedDelete } from "@/lib/db";
 import { useSettings } from "@/contexts/SettingsContext";
-import { money } from "@/lib/format";
+import { money, localDateStr } from "@/lib/format";
 import { groupByPeriod, GroupMode } from "@/lib/grouping";
 import type { Expense, OtherIncome } from "@/lib/types";
 
@@ -170,7 +170,7 @@ export default function ExpensesPage() {
 }
 
 function AddExpenseModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => localDateStr(new Date()));
   const [category, setCategory] = useState("");
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
@@ -229,7 +229,7 @@ function AddExpenseModal({ onClose, onSaved }: { onClose: () => void; onSaved: (
 }
 
 function AddIncomeModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => localDateStr(new Date()));
   const [category, setCategory] = useState("");
   const [recipient, setRecipient] = useState("");
   const [description, setDescription] = useState("");
