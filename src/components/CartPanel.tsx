@@ -20,15 +20,31 @@ export default function CartPanel({ open, onClose }: { open: boolean; onClose: (
 
   const finalize = async (tendered: number) => {
     if (lines.length === 0) return;
+    const isSale = mode === "SALE";
+    const grand = Math.round(totals.grand * 100) / 100;
+    const balanceDue = isSale ? Math.max(0, Math.round((grand - tendered) * 100) / 100) : 0;
+    const partyName = party || (mode === "SALE" ? "Walk-in" : "Supplier");
+
+    if (balanceDue > 0) {
+      if (!party) {
+        alert("Pick a customer before recording a sale on credit — a debt needs a named customer to track.");
+        return;
+      }
+      if (!confirm(`${partyName} paid ${money(tendered, currency)} of ${money(grand, currency)}. Record the remaining ${money(balanceDue, currency)} as debt owed by ${partyName}?`)) {
+        return;
+      }
+    }
+
     setBusy(true);
     try {
-      const partyName = party || (mode === "SALE" ? "Walk-in" : "Supplier");
+      const status = balanceDue > 0 ? "Open" : "Paid";
       const orderPayload: Record<string, unknown> = {
         type: mode,
-        status: "Paid",
+        status,
         party: partyName,
         user_name: cashier,
-        total_paid: Math.round(totals.grand * 100) / 100,
+        total_paid: grand,
+        balance_due: balanceDue,
         created_by: session?.user.id,
       };
       if (settings.backdate_enabled && orderDate) {
@@ -58,11 +74,21 @@ export default function CartPanel({ open, onClose }: { open: boolean; onClose: (
       const { error: ie } = await supabase.from("posinv_order_items").insert(items);
       if (ie) throw ie;
 
+      if (status === "Open" && tendered > 0) {
+        await supabase.from("posinv_order_payments").insert({
+          order_id: order.id,
+          amount: Math.round(tendered * 100) / 100,
+          note: "Payment at time of sale",
+          created_by: session?.user.id,
+        });
+      }
+
       setReceipt({
         orderId: order.id,
         orderOn: order.order_on,
         type: mode,
-        status: "Paid",
+        status,
+        balanceDue,
         party: partyName,
         cashierName: cashier,
         items: items.map((i) => ({ qty: i.qty, unit: i.unit, product_name: i.product_name, disc_pct: i.disc_pct, line_total: i.line_total })),

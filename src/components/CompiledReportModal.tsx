@@ -10,6 +10,7 @@ export interface CompiledReport {
   totalPurch: number;
   totalExpenses: number;
   totalOtherIncome: number;
+  totalOutstandingDebt: number;
   showPurchases: boolean;
   products: { name: string; sku: string; total: number; qty: number; unitsPerBox: number }[];
   expenseLines: { category: string; description: string | null; amount: number }[];
@@ -20,13 +21,17 @@ export interface CompiledReport {
 export default function CompiledReportModal({ report, onClose }: { report: CompiledReport; onClose: () => void }) {
   const { settings } = useSettings();
   const currency = settings.currency;
-  // Total sales = everything earned (till + sent-directly). Cash at hand backs
-  // out both Other Income (never touched the till) and Expenses (assumed paid
-  // out of that same till cash) to land on what should physically be in the drawer.
-  const totalSales = report.posSales + report.totalOtherIncome;
-  const cashAtHand = totalSales - report.totalOtherIncome - report.totalExpenses;
+  // Total sales = till/register revenue only — Other Income never counts
+  // toward it, since it never touched the till. Cash at hand backs out
+  // Expenses too (assumed paid out of that same till cash), and also backs
+  // out unpaid credit sales — a debt counts toward Total sales the moment
+  // it's rung up, but isn't cash until it's actually collected. Net profit
+  // is the one figure that still adds Other Income back in, since it's real
+  // revenue for the true bottom line even though it's not cash on hand.
+  const totalSales = report.posSales;
+  const cashAtHand = totalSales - report.totalExpenses - report.totalOutstandingDebt;
   const profit = totalSales - report.totalPurch;
-  const netProfit = (report.showPurchases ? profit : totalSales) - report.totalExpenses;
+  const netProfit = (report.showPurchases ? profit : totalSales) - report.totalExpenses + report.totalOtherIncome;
 
   return (
     <div className="modal" id="reportModal">
@@ -61,6 +66,12 @@ export default function CompiledReportModal({ report, onClose }: { report: Compi
                 <td>Cash at hand</td>
                 <td className="tr">{money(cashAtHand, currency)}</td>
               </tr>
+              {report.totalOutstandingDebt > 0 && (
+                <tr>
+                  <td>Owed (debts)</td>
+                  <td className="tr">{money(report.totalOutstandingDebt, currency)}</td>
+                </tr>
+              )}
               {report.showPurchases && (
                 <>
                   <tr>

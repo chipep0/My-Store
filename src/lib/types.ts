@@ -35,7 +35,16 @@ export interface Order {
   party: string | null;
   user_name?: string | null;
   total_paid: number;
+  balance_due?: number;
   created_by?: string;
+}
+
+export interface OrderPayment {
+  id: number;
+  order_id: number;
+  paid_on: string;
+  amount: number;
+  note: string | null;
 }
 
 export interface OrderItem {

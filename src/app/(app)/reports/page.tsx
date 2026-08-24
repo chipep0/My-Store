@@ -6,7 +6,7 @@ import { money, signedMoney, qtyBoxLabel } from "@/lib/format";
 import type { PeriodArchive } from "@/lib/types";
 import CompiledReportModal, { CompiledReport } from "@/components/CompiledReportModal";
 
-interface OrdRow { id: number; order_on: string; type: "SALE" | "PURCHASE"; status: string }
+interface OrdRow { id: number; order_on: string; type: "SALE" | "PURCHASE"; status: string; balance_due?: number }
 interface ItemRow { order_id: number; sku: string; product_name: string; line_total: number; base_qty: number }
 
 function BarRow({ label, val, max, currency, sub }: { label: string; val: number; max: number; currency: string; sub?: string }) {
@@ -30,7 +30,7 @@ export default function ReportsPage() {
   const currency = settings.currency;
   const [showPurchases, setShowPurchases] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ posSales: 0, totalPurch: 0, totalExpenses: 0, totalOtherIncome: 0, pctPaid: 100 });
+  const [stats, setStats] = useState({ posSales: 0, totalPurch: 0, totalExpenses: 0, totalOtherIncome: 0, totalOutstandingDebt: 0, pctPaid: 100 });
   const [top, setTop] = useState<{ sku: string; name: string; total: number; qty: number; unitsPerBox: number }[]>([]);
   const [months, setMonths] = useState<{ label: string; total: number }[]>([]);
   const [lowStock, setLowStock] = useState<{ sku: string; name: string; category: string | null; st: number }[]>([]);
@@ -47,7 +47,7 @@ export default function ReportsPage() {
     since.setMonth(since.getMonth() - 11);
 
     const [{ data: orders }, { data: items }, { data: expenses }, { data: otherIncome }, { data: prods }, { data: inv }, { data: arch }] = await Promise.all([
-      supabase.from("posinv_orders").select("id,order_on,type,status").gte("order_on", since.toISOString()),
+      supabase.from("posinv_orders").select("id,order_on,type,status,balance_due").gte("order_on", since.toISOString()),
       supabase.from("posinv_order_items").select("order_id,sku,product_name,line_total,base_qty"),
       supabase.from("posinv_expenses").select("amount").gte("expense_on", since.toISOString().slice(0, 10)),
       supabase.from("posinv_other_income").select("amount").gte("received_on", since.toISOString().slice(0, 10)),
@@ -65,11 +65,13 @@ export default function ReportsPage() {
     let posSales = 0,
       totalPurch = 0,
       paidCount = 0,
-      saleOrderCount = 0;
+      saleOrderCount = 0,
+      totalOutstandingDebt = 0;
     (orders || []).forEach((o) => {
       if (o.type === "SALE" && o.status !== "Void") {
         saleOrderCount++;
         if (o.status === "Paid") paidCount++;
+        if (o.status === "Open") totalOutstandingDebt += Number(o.balance_due) || 0;
       }
     });
     const bySku: Record<string, { name: string; total: number; qty: number }> = {};
@@ -92,7 +94,7 @@ export default function ReportsPage() {
     });
     const totalExpenses = (expenses || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const totalOtherIncome = (otherIncome || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    setStats({ posSales, totalPurch, totalExpenses, totalOtherIncome, pctPaid: saleOrderCount ? Math.round((paidCount / saleOrderCount) * 100) : 100 });
+    setStats({ posSales, totalPurch, totalExpenses, totalOtherIncome, totalOutstandingDebt, pctPaid: saleOrderCount ? Math.round((paidCount / saleOrderCount) * 100) : 100 });
 
     const topArr = Object.entries(bySku)
       .map(([sku, v]) => ({ sku, name: v.name, total: v.total, qty: v.qty, unitsPerBox: upbMap[sku] || 1 }))
@@ -127,7 +129,7 @@ export default function ReportsPage() {
 
   const compile = async (start: Date, end: Date, label: string, rangeTxt: string) => {
     const [{ data: orders, error: oe }, { data: items, error: ie }, { data: expenses, error: ee }, { data: otherIncome, error: oie }, { data: prods }] = await Promise.all([
-      supabase.from("posinv_orders").select("id,order_on,type,status").gte("order_on", start.toISOString()).lte("order_on", end.toISOString()),
+      supabase.from("posinv_orders").select("id,order_on,type,status,balance_due").gte("order_on", start.toISOString()).lte("order_on", end.toISOString()),
       supabase.from("posinv_order_items").select("order_id,sku,product_name,line_total,base_qty"),
       supabase.from("posinv_expenses").select("category,description,amount").gte("expense_on", start.toISOString().slice(0, 10)).lte("expense_on", end.toISOString().slice(0, 10)),
       supabase.from("posinv_other_income").select("category,recipient,description,amount").gte("received_on", start.toISOString().slice(0, 10)).lte("received_on", end.toISOString().slice(0, 10)),
@@ -141,7 +143,8 @@ export default function ReportsPage() {
     (orders || []).forEach((o) => (ordMap[o.id] = o as OrdRow));
 
     let posSales = 0,
-      totalPurch = 0;
+      totalPurch = 0,
+      totalOutstandingDebt = 0;
     const bySku: Record<string, { name: string; total: number; qty: number }> = {};
     const byPurchSku: Record<string, { name: string; total: number; qty: number }> = {};
     const counted = new Set<number>();
@@ -162,6 +165,9 @@ export default function ReportsPage() {
       }
       counted.add(o.id);
     });
+    (orders || []).forEach((o) => {
+      if (o.type === "SALE" && o.status === "Open") totalOutstandingDebt += Number(o.balance_due) || 0;
+    });
     const totalExpenses = (expenses || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const totalOtherIncome = (otherIncome || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
 
@@ -173,6 +179,7 @@ export default function ReportsPage() {
       totalPurch,
       totalExpenses,
       totalOtherIncome,
+      totalOutstandingDebt,
       showPurchases,
       products: Object.entries(bySku)
         .map(([sku, v]) => ({ sku, name: v.name, total: v.total, qty: v.qty, unitsPerBox: upbMap[sku] || 1 }))
@@ -211,13 +218,17 @@ export default function ReportsPage() {
     compile(s, e, "DATE RANGE REPORT", from === toVal ? s.toLocaleDateString() : `${s.toLocaleDateString()} – ${e.toLocaleDateString()}`);
   };
 
-  // Total Sales = everything earned (till + sent-directly). Cash at hand backs
-  // out both Other Income (never touched the till) and Expenses (assumed paid
-  // out of that same till cash) to land on what should physically be in the drawer.
-  const totalSales = stats.posSales + stats.totalOtherIncome;
-  const cashAtHand = totalSales - stats.totalOtherIncome - stats.totalExpenses;
+  // Total sales = till/register revenue only — Other Income never counts
+  // toward it, since it never touched the till. Cash at hand backs out
+  // Expenses too (assumed paid out of that same till cash), and also backs
+  // out unpaid credit sales — a debt counts toward Total sales the moment
+  // it's rung up, but isn't cash until it's actually collected. Net profit
+  // is the one figure that still adds Other Income back in, since it's real
+  // revenue for the true bottom line even though it's not cash on hand.
+  const totalSales = stats.posSales;
+  const cashAtHand = totalSales - stats.totalExpenses - stats.totalOutstandingDebt;
   const profit = totalSales - stats.totalPurch;
-  const netProfit = (showPurchases ? profit : totalSales) - stats.totalExpenses;
+  const netProfit = (showPurchases ? profit : totalSales) - stats.totalExpenses + stats.totalOtherIncome;
   const maxTop = top.length ? top[0].total : 0;
   const maxMonth = Math.max(1, ...months.map((m) => m.total));
 
@@ -277,6 +288,12 @@ export default function ReportsPage() {
               <div className="lbl">Cash at hand</div>
               <div className="val">{money(cashAtHand, currency)}</div>
             </div>
+            {stats.totalOutstandingDebt > 0 && (
+              <div className="stat">
+                <div className="lbl">Owed (debts)</div>
+                <div className="val">{money(stats.totalOutstandingDebt, currency)}</div>
+              </div>
+            )}
             {showPurchases && (
               <div className="stat">
                 <div className="lbl">Total purchases</div>

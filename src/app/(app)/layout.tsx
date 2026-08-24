@@ -12,6 +12,7 @@ const NAV = [
   { href: "/pos", icon: "🛒", label: "POS" },
   { href: "/stock", icon: "📦", label: "Stock" },
   { href: "/reports", icon: "📊", label: "Reports" },
+  { href: "/debts", icon: "💳", label: "Debts" },
   { href: "/expenses", icon: "💰", label: "Expenses", managerOnly: true },
   { href: "/settings", icon: "⚙️", label: "Settings", hideForTrainee: true },
 ];
