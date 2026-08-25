@@ -59,46 +59,106 @@ export default function StockPage() {
       ) : !filtered.length ? (
         <div className="empty">No products match.</div>
       ) : (
-        filtered.map((p) => {
-          const st = stock[p.sku];
-          const upb = Math.max(1, Math.floor(p.units_per_box) || 1);
-          const cls = stockClass(st, settings.low_stock);
-          const boxes = st != null ? Math.floor(st / upb) : 0;
-          const stTxt = st == null ? "—" : `${st} EA${upb > 1 ? ` (${boxes} box${boxes === 1 ? "" : "es"})` : ""}`;
+        (() => {
+          const rows = filtered.map((p) => {
+            const st = stock[p.sku];
+            const upb = Math.max(1, Math.floor(p.units_per_box) || 1);
+            const cls = stockClass(st, settings.low_stock);
+            const boxes = st != null ? Math.floor(st / upb) : 0;
+            const stTxt = st == null ? "—" : `${st} EA${upb > 1 ? ` (${boxes} box${boxes === 1 ? "" : "es"})` : ""}`;
+            return { p, st, upb, cls, stTxt };
+          });
           return (
-            <div className="listcard" key={p.sku}>
-              <div className="top">
-                <b>{p.name}</b>
-                <span className={`badge ${stockBadgeVariant(cls)}`}>{stockTag(cls)}</span>
+            <>
+              <div className="mobile-only">
+                {rows.map(({ p, cls, stTxt, upb }) => (
+                  <div className="listcard" key={p.sku}>
+                    <div className="top">
+                      <b>{p.name}</b>
+                      <span className={`badge ${stockBadgeVariant(cls)}`}>{stockTag(cls)}</span>
+                    </div>
+                    <div className="meta">
+                      {p.category || "—"}
+                      {p.subcategory ? " · " + p.subcategory : ""} · SKU {p.sku}
+                    </div>
+                    <div className="meta">
+                      {stTxt} in stock · {money(unitPriceFor(p, "EA", "SALE"), settings.currency)}{" "}
+                      {upb > 1 ? "EA / " + money(unitPriceFor(p, "BOX", "SALE"), settings.currency) + " box" : "each"}
+                    </div>
+                    <div className="acts">
+                      {isManager && (
+                        <button className="act-edit" onClick={() => setModal(p)}>
+                          Edit
+                        </button>
+                      )}
+                      {canPurchase && (
+                        <button className="act-refund" onClick={() => restock(p)}>
+                          Add stock
+                        </button>
+                      )}
+                      {isManager && (
+                        <button className="act-void" onClick={() => deleteProduct(p)}>
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="meta">
-                {p.category || "—"}
-                {p.subcategory ? " · " + p.subcategory : ""} · SKU {p.sku}
-              </div>
-              <div className="meta">
-                {stTxt} in stock · {money(unitPriceFor(p, "EA", "SALE"), settings.currency)}{" "}
-                {upb > 1 ? "EA / " + money(unitPriceFor(p, "BOX", "SALE"), settings.currency) + " box" : "each"}
-              </div>
-              <div className="acts">
-                {isManager && (
-                  <button className="act-edit" onClick={() => setModal(p)}>
-                    Edit
-                  </button>
-                )}
-                {canPurchase && (
-                  <button className="act-refund" onClick={() => restock(p)}>
-                    Add stock
-                  </button>
-                )}
-                {isManager && (
-                  <button className="act-void" onClick={() => deleteProduct(p)}>
-                    Delete
-                  </button>
-                )}
-              </div>
-            </div>
+
+              <table className="dtable desktop-only">
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th>Category</th>
+                    <th>SKU</th>
+                    <th className="tr">On hand</th>
+                    <th className="tr">Price</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(({ p, cls, stTxt, upb }) => (
+                    <tr key={p.sku}>
+                      <td>{p.name}</td>
+                      <td>
+                        {p.category || "—"}
+                        {p.subcategory ? " · " + p.subcategory : ""}
+                      </td>
+                      <td>{p.sku}</td>
+                      <td className="tr">
+                        {stTxt} <span className={`badge ${stockBadgeVariant(cls)}`}>{stockTag(cls)}</span>
+                      </td>
+                      <td className="tr">
+                        {money(unitPriceFor(p, "EA", "SALE"), settings.currency)}
+                        {upb > 1 ? " / " + money(unitPriceFor(p, "BOX", "SALE"), settings.currency) + " box" : ""}
+                      </td>
+                      <td>
+                        <div className="acts">
+                          {isManager && (
+                            <button className="act-edit" onClick={() => setModal(p)}>
+                              Edit
+                            </button>
+                          )}
+                          {canPurchase && (
+                            <button className="act-refund" onClick={() => restock(p)}>
+                              Add stock
+                            </button>
+                          )}
+                          {isManager && (
+                            <button className="act-void" onClick={() => deleteProduct(p)}>
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
           );
-        })
+        })()
       )}
       {modal && (
         <ProductModal

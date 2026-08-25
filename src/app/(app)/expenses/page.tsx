@@ -1,13 +1,19 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { guardedDelete } from "@/lib/db";
+import { guardedDelete, guardedUpdate } from "@/lib/db";
 import { useSettings } from "@/contexts/SettingsContext";
 import { money, localDateStr } from "@/lib/format";
 import { groupByPeriod, GroupMode } from "@/lib/grouping";
 import type { Expense, OtherIncome } from "@/lib/types";
 
 type Tab = "expenses" | "income";
+
+const defaultFrom = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 30);
+  return localDateStr(d);
+};
 
 export default function ExpensesPage() {
   const { settings } = useSettings();
@@ -16,22 +22,39 @@ export default function ExpensesPage() {
   const [income, setIncome] = useState<OtherIncome[]>([]);
   const [loading, setLoading] = useState(true);
   const [groupBy, setGroupBy] = useState<GroupMode>("day");
-  const [modalOpen, setModalOpen] = useState(false);
+  const [expModal, setExpModal] = useState<"add" | Expense | null>(null);
+  const [incModal, setIncModal] = useState<"add" | OtherIncome | null>(null);
+  const [from, setFrom] = useState(defaultFrom);
+  const [to, setTo] = useState(() => localDateStr(new Date()));
+  const [search, setSearch] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     const [{ data: exp }, { data: inc }] = await Promise.all([
-      supabase.from("posinv_expenses").select("id,expense_on,category,description,amount").order("expense_on", { ascending: false }).limit(300),
-      supabase.from("posinv_other_income").select("id,received_on,category,recipient,description,amount").order("received_on", { ascending: false }).limit(300),
+      supabase.from("posinv_expenses").select("id,expense_on,category,description,amount").gte("expense_on", from).lte("expense_on", to).order("expense_on", { ascending: false }).limit(1000),
+      supabase.from("posinv_other_income").select("id,received_on,category,recipient,description,amount").gte("received_on", from).lte("received_on", to).order("received_on", { ascending: false }).limit(1000),
     ]);
     setExpenses(exp || []);
     setIncome(inc || []);
     setLoading(false);
-  }, []);
+  }, [from, to]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  const term = search.trim().toLowerCase();
+  const filteredExpenses = useMemo(
+    () => (term ? expenses.filter((x) => x.category.toLowerCase().includes(term) || (x.description || "").toLowerCase().includes(term)) : expenses),
+    [expenses, term]
+  );
+  const filteredIncome = useMemo(
+    () =>
+      term
+        ? income.filter((x) => x.category.toLowerCase().includes(term) || (x.recipient || "").toLowerCase().includes(term) || (x.description || "").toLowerCase().includes(term))
+        : income,
+    [income, term]
+  );
 
   const deleteExpense = async (id: number) => {
     if (!confirm("Delete this expense?")) return;
@@ -47,14 +70,14 @@ export default function ExpensesPage() {
     load();
   };
 
-  const expenseGroups = useMemo(() => groupByPeriod(expenses, groupBy, (x) => x.expense_on, (x) => x.amount), [expenses, groupBy]);
-  const incomeGroups = useMemo(() => groupByPeriod(income, groupBy, (x) => x.received_on, (x) => x.amount), [income, groupBy]);
+  const expenseGroups = useMemo(() => groupByPeriod(filteredExpenses, groupBy, (x) => x.expense_on, (x) => x.amount), [filteredExpenses, groupBy]);
+  const incomeGroups = useMemo(() => groupByPeriod(filteredIncome, groupBy, (x) => x.received_on, (x) => x.amount), [filteredIncome, groupBy]);
 
   return (
     <div className="view">
       <div className="vhead" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span>{tab === "expenses" ? "Expenses" : "Other Income"}</span>
-        <button className="btn sm" onClick={() => setModalOpen(true)}>
+        <button className="btn sm" onClick={() => (tab === "expenses" ? setExpModal("add") : setIncModal("add"))}>
           ＋ Add {tab === "expenses" ? "expense" : "income"}
         </button>
       </div>
@@ -73,6 +96,22 @@ export default function ExpensesPage() {
           directly. Adds to that day&apos;s Total sales in Reports.
         </div>
       )}
+
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", margin: "0 0 12px" }}>
+        <div style={{ flex: 1, minWidth: 120 }}>
+          <label>From</label>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        </div>
+        <div style={{ flex: 1, minWidth: 120 }}>
+          <label>To</label>
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        </div>
+        <div style={{ flex: 2, minWidth: 160 }}>
+          <label>Search</label>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Category, description…" />
+        </div>
+      </div>
+
       <div className="chips" style={{ padding: "0 0 12px" }}>
         {(["day", "week", "month", "quarter"] as GroupMode[]).map((m) => (
           <button key={m} className={`chip${groupBy === m ? " on" : ""}`} onClick={() => setGroupBy(m)}>
@@ -87,8 +126,8 @@ export default function ExpensesPage() {
           Loading…
         </div>
       ) : tab === "expenses" ? (
-        !expenses.length ? (
-          <div className="empty">No expenses logged yet.</div>
+        !filteredExpenses.length ? (
+          <div className="empty">No expenses match this date range/search.</div>
         ) : (
           expenseGroups.map((g) => (
             <div key={g.label}>
@@ -107,6 +146,9 @@ export default function ExpensesPage() {
                     {x.description ? " · " + x.description : ""}
                   </div>
                   <div className="acts">
+                    <button className="act-edit" onClick={() => setExpModal(x)}>
+                      Edit
+                    </button>
                     <button className="act-void" onClick={() => deleteExpense(x.id)}>
                       Delete
                     </button>
@@ -116,8 +158,8 @@ export default function ExpensesPage() {
             </div>
           ))
         )
-      ) : !income.length ? (
-        <div className="empty">No other income logged yet.</div>
+      ) : !filteredIncome.length ? (
+        <div className="empty">No other income matches this date range/search.</div>
       ) : (
         incomeGroups.map((g) => (
           <div key={g.label}>
@@ -137,6 +179,9 @@ export default function ExpensesPage() {
                   {x.description ? " · " + x.description : ""}
                 </div>
                 <div className="acts">
+                  <button className="act-edit" onClick={() => setIncModal(x)}>
+                    Edit
+                  </button>
                   <button className="act-void" onClick={() => deleteIncome(x.id)}>
                     Delete
                   </button>
@@ -147,20 +192,22 @@ export default function ExpensesPage() {
         ))
       )}
 
-      {modalOpen && tab === "expenses" && (
+      {expModal && (
         <AddExpenseModal
-          onClose={() => setModalOpen(false)}
+          editItem={expModal === "add" ? null : expModal}
+          onClose={() => setExpModal(null)}
           onSaved={() => {
-            setModalOpen(false);
+            setExpModal(null);
             load();
           }}
         />
       )}
-      {modalOpen && tab === "income" && (
+      {incModal && (
         <AddIncomeModal
-          onClose={() => setModalOpen(false)}
+          editItem={incModal === "add" ? null : incModal}
+          onClose={() => setIncModal(null)}
           onSaved={() => {
-            setModalOpen(false);
+            setIncModal(null);
             load();
           }}
         />
@@ -169,11 +216,12 @@ export default function ExpensesPage() {
   );
 }
 
-function AddExpenseModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [date, setDate] = useState(() => localDateStr(new Date()));
-  const [category, setCategory] = useState("");
-  const [description, setDescription] = useState("");
-  const [amount, setAmount] = useState("");
+function AddExpenseModal({ editItem, onClose, onSaved }: { editItem?: Expense | null; onClose: () => void; onSaved: () => void }) {
+  const editing = !!editItem;
+  const [date, setDate] = useState(() => editItem?.expense_on || localDateStr(new Date()));
+  const [category, setCategory] = useState(editItem?.category || "");
+  const [description, setDescription] = useState(editItem?.description || "");
+  const [amount, setAmount] = useState(editItem ? String(editItem.amount) : "");
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -181,20 +229,25 @@ function AddExpenseModal({ onClose, onSaved }: { onClose: () => void; onSaved: (
     if (amt <= 0) return alert("Enter an amount greater than 0.");
     setSaving(true);
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      const { error } = await supabase.from("posinv_expenses").insert({
+      const fields = {
         expense_on: date,
         category: category.trim() || "Other",
         description: description.trim(),
         amount: amt,
-        created_by: user?.id,
-      });
-      if (error) throw error;
+      };
+      if (editing) {
+        const res = await guardedUpdate("posinv_expenses", "id", editItem!.id, fields, "editing expenses");
+        if (!res.ok) throw new Error(res.error);
+      } else {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        const { error } = await supabase.from("posinv_expenses").insert({ ...fields, created_by: user?.id });
+        if (error) throw error;
+      }
       onSaved();
     } catch (err) {
-      alert("Could not save expense: " + (err instanceof Error ? err.message : err) + " — run supabase/13_expenses.sql first.");
+      alert("Could not save expense: " + (err instanceof Error ? err.message : err));
     } finally {
       setSaving(false);
     }
@@ -203,7 +256,7 @@ function AddExpenseModal({ onClose, onSaved }: { onClose: () => void; onSaved: (
   return (
     <div className="modal">
       <div className="mbox">
-        <h3>Add expense</h3>
+        <h3>{editing ? "Edit expense" : "Add expense"}</h3>
         <label>Date</label>
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         <label>Category</label>
@@ -218,7 +271,7 @@ function AddExpenseModal({ onClose, onSaved }: { onClose: () => void; onSaved: (
         <label>Amount</label>
         <input type="number" step="0.01" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
         <button className="checkout" style={{ background: "var(--teal)" }} disabled={saving} onClick={save}>
-          {saving ? "Saving…" : "Save expense"}
+          {saving ? "Saving…" : editing ? "Save changes" : "Save expense"}
         </button>
         <button className="btn sec" onClick={onClose}>
           Cancel
@@ -228,12 +281,13 @@ function AddExpenseModal({ onClose, onSaved }: { onClose: () => void; onSaved: (
   );
 }
 
-function AddIncomeModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [date, setDate] = useState(() => localDateStr(new Date()));
-  const [category, setCategory] = useState("");
-  const [recipient, setRecipient] = useState("");
-  const [description, setDescription] = useState("");
-  const [amount, setAmount] = useState("");
+function AddIncomeModal({ editItem, onClose, onSaved }: { editItem?: OtherIncome | null; onClose: () => void; onSaved: () => void }) {
+  const editing = !!editItem;
+  const [date, setDate] = useState(() => editItem?.received_on || localDateStr(new Date()));
+  const [category, setCategory] = useState(editItem?.category || "");
+  const [recipient, setRecipient] = useState(editItem?.recipient || "");
+  const [description, setDescription] = useState(editItem?.description || "");
+  const [amount, setAmount] = useState(editItem ? String(editItem.amount) : "");
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -241,21 +295,26 @@ function AddIncomeModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
     if (amt <= 0) return alert("Enter an amount greater than 0.");
     setSaving(true);
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      const { error } = await supabase.from("posinv_other_income").insert({
+      const fields = {
         received_on: date,
         category: category.trim() || "Bank Transfer",
         recipient: recipient.trim(),
         description: description.trim(),
         amount: amt,
-        created_by: user?.id,
-      });
-      if (error) throw error;
+      };
+      if (editing) {
+        const res = await guardedUpdate("posinv_other_income", "id", editItem!.id, fields, "editing other income");
+        if (!res.ok) throw new Error(res.error);
+      } else {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        const { error } = await supabase.from("posinv_other_income").insert({ ...fields, created_by: user?.id });
+        if (error) throw error;
+      }
       onSaved();
     } catch (err) {
-      alert("Could not save income: " + (err instanceof Error ? err.message : err) + " — run supabase/18_other_income.sql first.");
+      alert("Could not save income: " + (err instanceof Error ? err.message : err));
     } finally {
       setSaving(false);
     }
@@ -264,7 +323,7 @@ function AddIncomeModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
   return (
     <div className="modal">
       <div className="mbox">
-        <h3>Add other income</h3>
+        <h3>{editing ? "Edit other income" : "Add other income"}</h3>
         <label>Date</label>
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         <label>Category</label>
@@ -282,7 +341,7 @@ function AddIncomeModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
         <input type="number" step="0.01" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
 
         <button className="checkout" style={{ background: "var(--teal)", marginTop: 14 }} disabled={saving} onClick={save}>
-          {saving ? "Saving…" : "Save income"}
+          {saving ? "Saving…" : editing ? "Save changes" : "Save income"}
         </button>
         <button className="btn sec" onClick={onClose}>
           Cancel

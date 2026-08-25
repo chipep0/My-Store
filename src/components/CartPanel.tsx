@@ -3,15 +3,23 @@ import { useState } from "react";
 import { useCart } from "@/contexts/CartContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { useOfflineQueue } from "@/contexts/OfflineQueueContext";
 import { money, localDateStr } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
 import ReceiptModal, { ReceiptData } from "@/components/ReceiptModal";
 import TenderModal from "@/components/TenderModal";
 
+function isNetworkError(err: unknown): boolean {
+  if (err instanceof TypeError) return true;
+  const msg = err instanceof Error ? err.message : String(err);
+  return /network|fetch|offline/i.test(msg);
+}
+
 export default function CartPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { mode, setMode, party, lines, changeQty, setDisc, lineTotal, totals, clear, bumpCatalog } = useCart();
   const { settings } = useSettings();
   const { cashier, session } = useAuth();
+  const { enqueue } = useOfflineQueue();
   const [tenderOpen, setTenderOpen] = useState(false);
   const [directOpen, setDirectOpen] = useState(false);
   const [receipt, setReceipt] = useState<ReceiptData | null>(null);
@@ -55,13 +63,12 @@ export default function CartPanel({ open, onClose }: { open: boolean; onClose: (
         dt.setFullYear(y, mo - 1, d);
         orderPayload.order_on = dt.toISOString();
       }
-      const { data: order, error: oe } = await supabase.from("posinv_orders").insert(orderPayload).select("id,order_on").single();
-      if (oe) throw oe;
 
-      const items = lines.map((l) => {
+      // order_id is filled in once the order actually exists — either right
+      // below (online) or later during sync (queued offline).
+      const itemsBase = lines.map((l) => {
         const upb = Math.max(1, Math.floor(l.product.units_per_box) || 1);
         return {
-          order_id: order.id,
           type: mode,
           sku: l.sku,
           product_name: l.product.name,
@@ -73,36 +80,66 @@ export default function CartPanel({ open, onClose }: { open: boolean; onClose: (
           line_total: Math.round(lineTotal(l) * 100) / 100,
         };
       });
-      const { error: ie } = await supabase.from("posinv_order_items").insert(items);
-      if (ie) throw ie;
+      const paymentAmount = status === "Open" && tendered > 0 ? Math.round(tendered * 100) / 100 : null;
 
-      if (status === "Open" && tendered > 0) {
-        await supabase.from("posinv_order_payments").insert({
-          order_id: order.id,
-          amount: Math.round(tendered * 100) / 100,
-          note: "Payment at time of sale",
-          created_by: session?.user.id,
-        });
+      // Offline queueing is scoped to SALEs only — a restock (PURCHASE)
+      // still needs a live connection, same as before.
+      const canQueue = isSale;
+      const offlineNow = canQueue && typeof navigator !== "undefined" && !navigator.onLine;
+
+      let orderId: number | null = null;
+      let orderOn = (orderPayload.order_on as string) || new Date().toISOString();
+      let queued = false;
+
+      if (offlineNow) {
+        enqueue(orderPayload, itemsBase, paymentAmount);
+        queued = true;
+      } else {
+        try {
+          const { data: order, error: oe } = await supabase.from("posinv_orders").insert(orderPayload).select("id,order_on").single();
+          if (oe) throw oe;
+          const items = itemsBase.map((i) => ({ ...i, order_id: order.id }));
+          const { error: ie } = await supabase.from("posinv_order_items").insert(items);
+          if (ie) throw ie;
+          if (paymentAmount) {
+            await supabase.from("posinv_order_payments").insert({
+              order_id: order.id,
+              amount: paymentAmount,
+              note: "Payment at time of sale",
+              created_by: session?.user.id,
+            });
+          }
+          orderId = order.id;
+          orderOn = order.order_on;
+        } catch (err) {
+          if (canQueue && isNetworkError(err)) {
+            enqueue(orderPayload, itemsBase, paymentAmount);
+            queued = true;
+          } else {
+            throw err;
+          }
+        }
       }
 
       setReceipt({
-        orderId: order.id,
-        orderOn: order.order_on,
+        orderId,
+        orderOn,
         type: mode,
         status,
         balanceDue,
         party: partyName,
         cashierName: cashier,
-        items: items.map((i) => ({ qty: i.qty, unit: i.unit, product_name: i.product_name, disc_pct: i.disc_pct, line_total: i.line_total })),
+        items: itemsBase.map((i) => ({ qty: i.qty, unit: i.unit, product_name: i.product_name, disc_pct: i.disc_pct, line_total: i.line_total })),
         sub: totals.sub,
         tax: totals.tax,
         grand: totals.grand,
         tendered,
         paidTo: paidTo || undefined,
+        queued,
       });
       clear();
       if (mode === "PURCHASE") setMode("SALE");
-      bumpCatalog();
+      if (!queued) bumpCatalog();
       onClose();
     } catch (err) {
       alert("Failed: " + (err instanceof Error ? err.message : String(err)));

@@ -3,6 +3,7 @@ import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { CartProvider } from "@/contexts/CartContext";
+import { OfflineQueueProvider } from "@/contexts/OfflineQueueContext";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 
 export const metadata: Metadata = {
@@ -25,7 +26,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ServiceWorkerRegister />
         <AuthProvider>
           <SettingsProvider>
-            <CartProvider>{children}</CartProvider>
+            <CartProvider>
+              <OfflineQueueProvider>{children}</OfflineQueueProvider>
+            </CartProvider>
           </SettingsProvider>
         </AuthProvider>
       </body>

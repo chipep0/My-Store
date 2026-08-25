@@ -3,7 +3,7 @@ import { useSettings } from "@/contexts/SettingsContext";
 import { money } from "@/lib/format";
 
 export interface ReceiptData {
-  orderId: number;
+  orderId: number | null;
   orderOn: string;
   type: "SALE" | "PURCHASE";
   status: string;
@@ -17,6 +17,7 @@ export interface ReceiptData {
   balanceDue?: number;
   paidTo?: string;
   reprint?: boolean;
+  queued?: boolean;
 }
 
 export default function ReceiptModal({ data, onClose }: { data: ReceiptData; onClose: () => void }) {
@@ -40,8 +41,13 @@ export default function ReceiptModal({ data, onClose }: { data: ReceiptData; onC
             {isSale ? "SALES RECEIPT" : "PURCHASE ORDER"}
             {data.status !== "Paid" ? " — " + data.status.toUpperCase() : ""}
           </div>
+          {data.queued && (
+            <div className="c" style={{ fontWeight: 700 }}>
+              ⏳ QUEUED — will sync when back online
+            </div>
+          )}
           <div className="c">
-            Order #{data.orderId} · {new Date(data.orderOn).toLocaleString()}
+            {data.orderId != null ? `Order #${data.orderId}` : "Order pending sync"} · {new Date(data.orderOn).toLocaleString()}
           </div>
           <div className="c">
             {isSale ? "Customer" : "Vendor"}: {data.party} · Cashier: {data.cashierName || "—"}

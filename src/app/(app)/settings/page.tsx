@@ -117,6 +117,16 @@ export default function SettingsPage() {
         </Link>
       </div>
 
+      <div className="listcard">
+        <label>Customers &amp; Vendors</label>
+        <div style={{ color: "var(--muted)", fontSize: 12, margin: "0 0 10px" }}>
+          Rename or remove entries from the customer/vendor picker on the POS screen.
+        </div>
+        <Link href="/parties" className="btn sec">
+          Manage customers &amp; vendors
+        </Link>
+      </div>
+
       {isManager && (
         <>
           <div className="listcard">

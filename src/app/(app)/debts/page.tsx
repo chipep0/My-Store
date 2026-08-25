@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { guardedUpdate } from "@/lib/db";
 import { useAuth } from "@/contexts/AuthContext";
@@ -121,6 +121,48 @@ export default function DebtsPage() {
 
   const totalOwed = groups.reduce((s, g) => s + g.owed, 0);
 
+  const orderDetail = (g: DebtGroup) => (
+    <div onClick={(e) => e.stopPropagation()}>
+      {g.orders.map((o) => (
+        <div key={o.id} style={{ borderTop: "1px solid var(--line, #eee)", padding: "10px 0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 13 }}>
+            <span>
+              Order #{o.id} · {new Date(o.order_on).toLocaleDateString()}
+            </span>
+            <span>{money(o.balance_due, currency)} owed</span>
+          </div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
+            {o.items.map((i, idx) => (
+              <span key={idx}>
+                {i.qty}
+                {i.unit === "BOX" ? " box" : "×"} {i.product_name}
+                {idx < o.items.length - 1 ? ", " : ""}
+              </span>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
+            Total {money(o.total_paid, currency)} · Paid so far {money(o.total_paid - o.balance_due, currency)}
+          </div>
+          {o.payments.length > 0 && (
+            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
+              {o.payments.map((p) => (
+                <div key={p.id}>
+                  {new Date(p.paid_on).toLocaleDateString()} — {money(p.amount, currency)}
+                  {p.note ? " (" + p.note + ")" : ""}
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="acts">
+            <button className="act-void" onClick={() => setPayFor(o)}>
+              Record payment
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
   return (
     <div className="view">
       <div className="vhead">Debts</div>
@@ -145,72 +187,81 @@ export default function DebtsPage() {
       ) : !groups.length ? (
         <div className="empty">No outstanding debts. Everyone's paid up. 🎉</div>
       ) : (
-        groups.map((g) => (
-          <div className="listcard" key={g.party} style={{ marginBottom: 8 }} onClick={() => setExpanded(expanded === g.party ? null : g.party)}>
-            <div className="top">
-              <b>{g.party}</b>
-              <span className="badge b-Open">{money(g.owed, currency)}</span>
-            </div>
-            <div className="meta" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span>
-                {g.orders.length} order{g.orders.length === 1 ? "" : "s"} outstanding
-                {contacts[g.party]?.phone ? " · 📞 " + contacts[g.party].phone : ""}
-              </span>
-              <button
-                className="act-void"
-                style={{ marginLeft: "auto" }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setEditContact(g.party);
-                }}
-              >
-                {contacts[g.party]?.phone || contacts[g.party]?.notes ? "Edit contact" : "Add contact"}
-              </button>
-            </div>
-
-            {expanded === g.party && (
-              <div style={{ marginTop: 10 }} onClick={(e) => e.stopPropagation()}>
-                {g.orders.map((o) => (
-                  <div key={o.id} style={{ borderTop: "1px solid var(--line, #eee)", padding: "10px 0" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 13 }}>
-                      <span>
-                        Order #{o.id} · {new Date(o.order_on).toLocaleDateString()}
-                      </span>
-                      <span>{money(o.balance_due, currency)} owed</span>
-                    </div>
-                    <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
-                      {o.items.map((i, idx) => (
-                        <span key={idx}>
-                          {i.qty}
-                          {i.unit === "BOX" ? " box" : "×"} {i.product_name}
-                          {idx < o.items.length - 1 ? ", " : ""}
-                        </span>
-                      ))}
-                    </div>
-                    <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
-                      Total {money(o.total_paid, currency)} · Paid so far {money(o.total_paid - o.balance_due, currency)}
-                    </div>
-                    {o.payments.length > 0 && (
-                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
-                        {o.payments.map((p) => (
-                          <div key={p.id}>
-                            {new Date(p.paid_on).toLocaleDateString()} — {money(p.amount, currency)}
-                            {p.note ? " (" + p.note + ")" : ""}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <div className="acts">
-                      <button className="act-void" onClick={() => setPayFor(o)}>
-                        Record payment
-                      </button>
-                    </div>
-                  </div>
-                ))}
+        <>
+          <div className="mobile-only">
+            {groups.map((g) => (
+              <div className="listcard" key={g.party} style={{ marginBottom: 8 }} onClick={() => setExpanded(expanded === g.party ? null : g.party)}>
+                <div className="top">
+                  <b>{g.party}</b>
+                  <span className="badge b-Open">{money(g.owed, currency)}</span>
+                </div>
+                <div className="meta" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span>
+                    {g.orders.length} order{g.orders.length === 1 ? "" : "s"} outstanding
+                    {contacts[g.party]?.phone ? " · 📞 " + contacts[g.party].phone : ""}
+                  </span>
+                  <button
+                    className="act-void"
+                    style={{ marginLeft: "auto" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditContact(g.party);
+                    }}
+                  >
+                    {contacts[g.party]?.phone || contacts[g.party]?.notes ? "Edit contact" : "Add contact"}
+                  </button>
+                </div>
+                {expanded === g.party && <div style={{ marginTop: 10 }}>{orderDetail(g)}</div>}
               </div>
-            )}
+            ))}
           </div>
-        ))
+
+          <table className="dtable desktop-only">
+            <thead>
+              <tr>
+                <th>Customer</th>
+                <th>Phone</th>
+                <th className="tr">Orders</th>
+                <th className="tr">Owed</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map((g) => (
+                <Fragment key={g.party}>
+                  <tr style={{ cursor: "pointer" }} onClick={() => setExpanded(expanded === g.party ? null : g.party)}>
+                    <td>
+                      <b>{g.party}</b>
+                    </td>
+                    <td>{contacts[g.party]?.phone || "—"}</td>
+                    <td className="tr">{g.orders.length}</td>
+                    <td className="tr">{money(g.owed, currency)}</td>
+                    <td>
+                      <div className="acts">
+                        <button
+                          className="act-void"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditContact(g.party);
+                          }}
+                        >
+                          {contacts[g.party]?.phone || contacts[g.party]?.notes ? "Edit contact" : "Add contact"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  {expanded === g.party && (
+                    <tr>
+                      <td colSpan={5} style={{ background: "var(--bg)" }}>
+                        {orderDetail(g)}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </>
       )}
 
       {payFor && <PaymentModal order={payFor} currency={currency} onCancel={() => setPayFor(null)} onConfirm={(amt) => recordPayment(payFor, amt)} />}
