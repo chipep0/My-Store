@@ -100,7 +100,7 @@ export default function CompiledReportModal({ report, onClose }: { report: Compi
               </tr>
               <tr>
                 <td>
-                  <b>Net profit</b>
+                  <b>Amount sent</b>
                 </td>
                 <td className="tr">
                   <b>{signedMoney(netProfit, currency)}</b>

@@ -364,7 +364,7 @@ export default function ReportsPage() {
               <div className="val">{money(stats.totalExpenses, currency)}</div>
             </div>
             <div className="stat">
-              <div className="lbl">Net profit</div>
+              <div className="lbl">Amount sent</div>
               <div className="val">{signedMoney(netProfit, currency)}</div>
             </div>
             <div className="stat">
@@ -422,7 +422,7 @@ export default function ReportsPage() {
                   <span className="badge b-Paid">{money(a.total_sales, currency)}</span>
                 </div>
                 <div className="meta">
-                  {a.order_count} orders · Purchases {money(a.total_purchase, currency)} · Expenses {money(a.total_expenses || 0, currency)} · Net profit{" "}
+                  {a.order_count} orders · Purchases {money(a.total_purchase, currency)} · Expenses {money(a.total_expenses || 0, currency)} · Amount sent{" "}
                   {money(a.net_profit || 0, currency)}
                 </div>
                 {(a.top_products || []).map((p) => (
