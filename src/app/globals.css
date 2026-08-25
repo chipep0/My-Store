@@ -233,7 +233,7 @@
     .sidenav a:hover{background:var(--bg)}
     .sidenav a.on{background:var(--teal-l);color:var(--teal)}
     .view{padding-bottom:24px}
-    .grid, .view{max-width:1200px}
+    .stat4{grid-template-columns:repeat(4,1fr)}
 
     /* desktop table lists (Stock/Orders/Debts): swap the mobile card
        stack for a real table, same data, denser and more scannable. */
