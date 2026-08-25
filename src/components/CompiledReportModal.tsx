@@ -159,7 +159,7 @@ export default function CompiledReportModal({ report, onClose }: { report: Compi
               {report.totalOtherIncome > 0 && (
                 <tr>
                   <td>Other income</td>
-                  <td className="tr">{money(report.totalOtherIncome, currency)}</td>
+                  <td className="tr">−{money(report.totalOtherIncome, currency)}</td>
                 </tr>
               )}
               {report.totalOutstandingDebt > 0 && (

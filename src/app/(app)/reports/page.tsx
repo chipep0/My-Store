@@ -323,7 +323,7 @@ export default function ReportsPage() {
             {stats.totalOtherIncome > 0 && (
               <div className="stat">
                 <div className="lbl">Other income</div>
-                <div className="val">{money(stats.totalOtherIncome, currency)}</div>
+                <div className="val">−{money(stats.totalOtherIncome, currency)}</div>
               </div>
             )}
             <div className="stat">
