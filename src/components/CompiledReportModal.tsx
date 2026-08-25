@@ -21,13 +21,15 @@ export interface CompiledReport {
 export default function CompiledReportModal({ report, onClose }: { report: CompiledReport; onClose: () => void }) {
   const { settings } = useSettings();
   const currency = settings.currency;
-  // Total sales = till/register revenue, adjusted by Other Income entries
-  // netted straight in as signed amounts — an entry SUBTRACTS by default
-  // (money that went out or never reached the till), and only ADDS if
-  // explicitly marked "genuine extra income".
+  // Total sales = Products sold + Other Income, signed (subtracts by
+  // default, adds only if flagged "genuine extra income"). Amount sent
+  // chains straight off Total sales, backing out Expenses and Other Income
+  // again — which means Other Income cancels out of Amount sent entirely
+  // (it only ever moves Total sales), leaving Amount sent = Products sold
+  // − Expenses.
   const totalSales = report.posSales + report.otherIncomeNet;
   const profit = totalSales - report.totalPurch;
-  const netProfit = (report.showPurchases ? profit : totalSales) - report.totalExpenses;
+  const netProfit = totalSales - report.totalExpenses - report.otherIncomeNet;
 
   return (
     <div className="modal" id="reportModal">

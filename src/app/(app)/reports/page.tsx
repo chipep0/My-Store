@@ -259,17 +259,18 @@ export default function ReportsPage() {
     router.push("/pos");
   };
 
-  // Total sales = till/register revenue, adjusted by Other Income entries
-  // netted straight in as signed amounts — an entry SUBTRACTS by default
-  // (money that went out or never reached the till), and only ADDS if
-  // explicitly marked "genuine extra income". Cash at hand backs out
-  // Expenses too (assumed paid out of that same till cash), and also
-  // backs out unpaid credit sales — a debt counts toward Total sales the
-  // moment it's rung up, but isn't cash until collected.
+  // Total sales = Products sold + Other Income, signed (subtracts by
+  // default, adds only if flagged "genuine extra income"). Cash at hand
+  // backs out Expenses (assumed paid from that same till cash) and unpaid
+  // credit sales — a debt counts toward Total sales the moment it's rung
+  // up, but isn't cash until collected. Amount sent chains straight off
+  // Total sales, backing out Expenses and Other Income again — which
+  // means Other Income cancels out of Amount sent entirely (it only ever
+  // moves Total sales), leaving Amount sent = Products sold − Expenses.
   const totalSales = stats.posSales + stats.otherIncomeNet;
   const cashAtHand = totalSales - stats.totalExpenses - stats.totalOutstandingDebt;
   const profit = totalSales - stats.totalPurch;
-  const netProfit = (showPurchases ? profit : totalSales) - stats.totalExpenses;
+  const netProfit = totalSales - stats.totalExpenses - stats.otherIncomeNet;
   const maxTop = top.length ? top[0].total : 0;
   const maxMonth = Math.max(1, ...months.map((m) => m.total));
 
