@@ -20,7 +20,7 @@ export default function OrdersPage() {
     setLoading(true);
     const { data } = await supabase
       .from("posinv_orders")
-      .select("id,order_on,type,status,party,total_paid")
+      .select("id,order_on,type,status,party,total_paid,paid_to")
       .order("order_on", { ascending: false })
       .limit(40);
     setOrders(data || []);
@@ -40,7 +40,7 @@ export default function OrdersPage() {
 
   const viewReceipt = async (orderId: number) => {
     const [{ data: order, error: oe }, { data: items, error: ie }] = await Promise.all([
-      supabase.from("posinv_orders").select("id,order_on,type,status,party,user_name,total_paid").eq("id", orderId).single(),
+      supabase.from("posinv_orders").select("id,order_on,type,status,party,user_name,total_paid,paid_to").eq("id", orderId).single(),
       supabase.from("posinv_order_items").select("sku,product_name,unit,qty,amount,disc_pct,line_total").eq("order_id", orderId).order("id"),
     ]);
     if (oe || ie || !order) return alert("Could not load receipt: " + (oe || ie)?.message);
@@ -58,6 +58,7 @@ export default function OrdersPage() {
       sub,
       tax,
       grand,
+      paidTo: order.paid_to || undefined,
       reprint: true,
     });
   };
@@ -90,6 +91,7 @@ export default function OrdersPage() {
               </div>
               <div className="meta">
                 <span className={`badge b-${o.type}`}>{o.type}</span> {o.party || ""} · {new Date(o.order_on).toLocaleString()}
+                {o.paid_to ? ` · 💸 Paid directly to ${o.paid_to}` : ""}
               </div>
               <div className="acts">
                 <button className="act-edit" onClick={() => viewReceipt(o.id)}>

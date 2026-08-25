@@ -36,6 +36,7 @@ export interface Order {
   user_name?: string | null;
   total_paid: number;
   balance_due?: number;
+  paid_to?: string | null;
   created_by?: string;
 }
 

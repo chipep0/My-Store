@@ -9,7 +9,7 @@ import { money, signedMoney, qtyBoxLabel, localDateStr } from "@/lib/format";
 import type { PeriodArchive } from "@/lib/types";
 import CompiledReportModal, { CompiledReport } from "@/components/CompiledReportModal";
 
-interface OrdRow { id: number; order_on: string; type: "SALE" | "PURCHASE"; status: string; balance_due?: number }
+interface OrdRow { id: number; order_on: string; type: "SALE" | "PURCHASE"; status: string; balance_due?: number; paid_to?: string | null }
 interface ItemRow { order_id: number; sku: string; product_name: string; line_total: number; base_qty: number }
 
 function BarRow({ label, val, max, currency, sub }: { label: string; val: number; max: number; currency: string; sub?: string }) {
@@ -36,7 +36,7 @@ export default function ReportsPage() {
   const currency = settings.currency;
   const [showPurchases, setShowPurchases] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ posSales: 0, totalPurch: 0, totalExpenses: 0, totalOtherIncome: 0, totalOutstandingDebt: 0, pctPaid: 100 });
+  const [stats, setStats] = useState({ posSales: 0, totalPurch: 0, totalExpenses: 0, totalOtherIncome: 0, totalDirectPayments: 0, totalOutstandingDebt: 0, pctPaid: 100 });
   const [top, setTop] = useState<{ sku: string; name: string; total: number; qty: number; unitsPerBox: number }[]>([]);
   const [months, setMonths] = useState<{ label: string; total: number }[]>([]);
   const [lowStock, setLowStock] = useState<{ sku: string; name: string; category: string | null; st: number }[]>([]);
@@ -54,7 +54,7 @@ export default function ReportsPage() {
     since.setMonth(since.getMonth() - 11);
 
     const [{ data: orders }, { data: items }, { data: expenses }, { data: otherIncome }, { data: prods }, { data: inv }, { data: arch }] = await Promise.all([
-      supabase.from("posinv_orders").select("id,order_on,type,status,balance_due").gte("order_on", since.toISOString()),
+      supabase.from("posinv_orders").select("id,order_on,type,status,balance_due,paid_to").gte("order_on", since.toISOString()),
       // Scoped via the parent order's date, not fetched unfiltered — an
       // unbounded select silently truncates at Supabase's default 1000-row
       // cap once the shop has logged that many line items in total, which
@@ -80,7 +80,8 @@ export default function ReportsPage() {
       totalPurch = 0,
       paidCount = 0,
       saleOrderCount = 0,
-      totalOutstandingDebt = 0;
+      totalOutstandingDebt = 0,
+      totalDirectPayments = 0;
     (orders || []).forEach((o) => {
       if (o.type === "SALE" && o.status !== "Void") {
         saleOrderCount++;
@@ -96,6 +97,7 @@ export default function ReportsPage() {
       const lt = Number(it.line_total) || 0;
       if (o.type === "SALE") {
         posSales += lt;
+        if (o.paid_to) totalDirectPayments += lt;
         const s = bySku[it.sku] || (bySku[it.sku] = { name: it.product_name, total: 0, qty: 0 });
         s.total += lt;
         s.qty += Number(it.base_qty) || 0;
@@ -108,7 +110,7 @@ export default function ReportsPage() {
     });
     const totalExpenses = (expenses || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const totalOtherIncome = (otherIncome || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    setStats({ posSales, totalPurch, totalExpenses, totalOtherIncome, totalOutstandingDebt, pctPaid: saleOrderCount ? Math.round((paidCount / saleOrderCount) * 100) : 100 });
+    setStats({ posSales, totalPurch, totalExpenses, totalOtherIncome, totalDirectPayments, totalOutstandingDebt, pctPaid: saleOrderCount ? Math.round((paidCount / saleOrderCount) * 100) : 100 });
 
     const topArr = Object.entries(bySku)
       .map(([sku, v]) => ({ sku, name: v.name, total: v.total, qty: v.qty, unitsPerBox: upbMap[sku] || 1 }))
@@ -144,7 +146,7 @@ export default function ReportsPage() {
 
   const compile = async (start: Date, end: Date, label: string, rangeTxt: string) => {
     const [{ data: orders, error: oe }, { data: items, error: ie }, { data: expenses, error: ee }, { data: otherIncome, error: oie }, { data: prods }] = await Promise.all([
-      supabase.from("posinv_orders").select("id,order_on,type,status,balance_due").gte("order_on", start.toISOString()).lte("order_on", end.toISOString()),
+      supabase.from("posinv_orders").select("id,order_on,type,status,balance_due,paid_to").gte("order_on", start.toISOString()).lte("order_on", end.toISOString()),
       supabase
         .from("posinv_order_items")
         .select("order_id,sku,product_name,line_total,base_qty,posinv_orders!inner(order_on)")
@@ -163,7 +165,8 @@ export default function ReportsPage() {
 
     let posSales = 0,
       totalPurch = 0,
-      totalOutstandingDebt = 0;
+      totalOutstandingDebt = 0,
+      totalDirectPayments = 0;
     const bySku: Record<string, { name: string; total: number; qty: number }> = {};
     const byPurchSku: Record<string, { name: string; total: number; qty: number }> = {};
     const counted = new Set<number>();
@@ -173,6 +176,7 @@ export default function ReportsPage() {
       const lt = Number(it.line_total) || 0;
       if (o.type === "SALE") {
         posSales += lt;
+        if (o.paid_to) totalDirectPayments += lt;
         const s = bySku[it.sku] || (bySku[it.sku] = { name: it.product_name, total: 0, qty: 0 });
         s.total += lt;
         s.qty += Number(it.base_qty) || 0;
@@ -198,6 +202,7 @@ export default function ReportsPage() {
       totalPurch,
       totalExpenses,
       totalOtherIncome,
+      totalDirectPayments,
       totalOutstandingDebt,
       showPurchases,
       products: Object.entries(bySku)
@@ -260,17 +265,19 @@ export default function ReportsPage() {
   };
 
   // Total sales = Products sold + Other Income — every entry always adds,
-  // regardless of how it's flagged. Cash at hand backs out Expenses
-  // (assumed paid from that same till cash) and unpaid credit sales — a
+  // regardless of how it's flagged. Products sold already includes sales
+  // paid directly to someone instead of the till (stock still deducted
+  // for those — they're real orders), so Cash at hand has to back that
+  // amount back out too, alongside Expenses and unpaid credit sales (a
   // debt counts toward Total sales the moment it's rung up, but isn't
-  // cash until collected. Amount sent chains straight off Total sales,
-  // backing out Expenses and Other Income again — which means Other
-  // Income cancels out of Amount sent entirely, leaving Amount sent =
-  // Products sold − Expenses.
+  // cash until collected). Amount sent chains straight off Total sales,
+  // backing out Expenses, Other Income, and direct payments again — Other
+  // Income cancels out entirely (it was never cash either way), leaving
+  // Amount sent = Products sold − Expenses − Direct payments.
   const totalSales = stats.posSales + stats.totalOtherIncome;
-  const cashAtHand = totalSales - stats.totalExpenses - stats.totalOutstandingDebt;
+  const cashAtHand = totalSales - stats.totalExpenses - stats.totalOutstandingDebt - stats.totalDirectPayments;
   const profit = totalSales - stats.totalPurch;
-  const netProfit = totalSales - stats.totalExpenses - stats.totalOtherIncome;
+  const netProfit = totalSales - stats.totalExpenses - stats.totalOtherIncome - stats.totalDirectPayments;
   const maxTop = top.length ? top[0].total : 0;
   const maxMonth = Math.max(1, ...months.map((m) => m.total));
 
@@ -324,6 +331,12 @@ export default function ReportsPage() {
               <div className="stat">
                 <div className="lbl">Other income</div>
                 <div className="val">−{money(stats.totalOtherIncome, currency)}</div>
+              </div>
+            )}
+            {stats.totalDirectPayments > 0 && (
+              <div className="stat">
+                <div className="lbl">Paid directly (not till)</div>
+                <div className="val">−{money(stats.totalDirectPayments, currency)}</div>
               </div>
             )}
             <div className="stat">

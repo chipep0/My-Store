@@ -15,6 +15,7 @@ export interface ReceiptData {
   grand: number;
   tendered?: number;
   balanceDue?: number;
+  paidTo?: string;
   reprint?: boolean;
 }
 
@@ -84,7 +85,16 @@ export default function ReceiptModal({ data, onClose }: { data: ReceiptData; onC
                   <b>{money(data.grand, currency)}</b>
                 </td>
               </tr>
-              {isSale && data.tendered ? (
+              {isSale && data.paidTo ? (
+                <tr>
+                  <td>
+                    <b>Paid directly to</b>
+                  </td>
+                  <td className="tr">
+                    <b>{data.paidTo}</b>
+                  </td>
+                </tr>
+              ) : isSale && data.tendered ? (
                 <>
                   <tr>
                     <td>Tendered</td>

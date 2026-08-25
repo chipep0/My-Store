@@ -13,16 +13,17 @@ export default function CartPanel({ open, onClose }: { open: boolean; onClose: (
   const { settings } = useSettings();
   const { cashier, session } = useAuth();
   const [tenderOpen, setTenderOpen] = useState(false);
+  const [directOpen, setDirectOpen] = useState(false);
   const [receipt, setReceipt] = useState<ReceiptData | null>(null);
   const [busy, setBusy] = useState(false);
   const [orderDate, setOrderDate] = useState(() => localDateStr(new Date()));
   const currency = settings.currency;
 
-  const finalize = async (tendered: number) => {
+  const finalize = async (tendered: number, paidTo?: string) => {
     if (lines.length === 0) return;
     const isSale = mode === "SALE";
     const grand = Math.round(totals.grand * 100) / 100;
-    const balanceDue = isSale ? Math.max(0, Math.round((grand - tendered) * 100) / 100) : 0;
+    const balanceDue = paidTo ? 0 : isSale ? Math.max(0, Math.round((grand - tendered) * 100) / 100) : 0;
     const partyName = party || (mode === "SALE" ? "Walk-in" : "Supplier");
 
     if (balanceDue > 0) {
@@ -45,6 +46,7 @@ export default function CartPanel({ open, onClose }: { open: boolean; onClose: (
         user_name: cashier,
         total_paid: grand,
         balance_due: balanceDue,
+        paid_to: paidTo || null,
         created_by: session?.user.id,
       };
       if (settings.backdate_enabled && orderDate) {
@@ -96,6 +98,7 @@ export default function CartPanel({ open, onClose }: { open: boolean; onClose: (
         tax: totals.tax,
         grand: totals.grand,
         tendered,
+        paidTo: paidTo || undefined,
       });
       clear();
       if (mode === "PURCHASE") setMode("SALE");
@@ -106,6 +109,7 @@ export default function CartPanel({ open, onClose }: { open: boolean; onClose: (
     } finally {
       setBusy(false);
       setTenderOpen(false);
+      setDirectOpen(false);
     }
   };
 
@@ -195,11 +199,54 @@ export default function CartPanel({ open, onClose }: { open: boolean; onClose: (
               {mode === "SALE" ? "Charge " : "Receive stock "}
               {money(totals.grand, currency)}
             </button>
+            {mode === "SALE" && (
+              <button className="btn sec" style={{ marginTop: 8 }} disabled={lines.length === 0 || busy} onClick={() => setDirectOpen(true)}>
+                💸 Paid directly to someone (not the till)
+              </button>
+            )}
           </div>
         </div>
       </div>
       {tenderOpen && <TenderModal grand={totals.grand} currency={currency} onCancel={() => setTenderOpen(false)} onConfirm={finalize} />}
+      {directOpen && (
+        <DirectPaymentModal grand={totals.grand} currency={currency} onCancel={() => setDirectOpen(false)} onConfirm={(paidTo) => finalize(totals.grand, paidTo)} />
+      )}
       {receipt && <ReceiptModal data={receipt} onClose={() => setReceipt(null)} />}
     </>
+  );
+}
+
+function DirectPaymentModal({ grand, currency, onCancel, onConfirm }: { grand: number; currency: string; onCancel: () => void; onConfirm: (paidTo: string) => void }) {
+  const [paidTo, setPaidTo] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const confirm = async () => {
+    if (!paidTo.trim()) return alert("Enter who the payment was sent to.");
+    setSaving(true);
+    try {
+      await onConfirm(paidTo.trim());
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal">
+      <div className="mbox">
+        <h3>Paid directly — {money(grand, currency)}</h3>
+        <div style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 10px" }}>
+          The goods left as a normal sale (stock still deducts), but the payment went straight to a person/account instead of
+          the till.
+        </div>
+        <label>Sent to (person / account)</label>
+        <input autoFocus value={paidTo} onChange={(e) => setPaidTo(e.target.value)} placeholder="e.g. Mr Romeo, or the bank account" />
+        <button className="checkout" style={{ background: "var(--teal)" }} disabled={saving} onClick={confirm}>
+          {saving ? "Saving…" : "Confirm sale"}
+        </button>
+        <button className="btn sec" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }

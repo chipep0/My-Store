@@ -10,6 +10,7 @@ export interface CompiledReport {
   totalPurch: number;
   totalExpenses: number;
   totalOtherIncome: number;
+  totalDirectPayments: number;
   totalOutstandingDebt: number;
   showPurchases: boolean;
   products: { name: string; sku: string; total: number; qty: number; unitsPerBox: number }[];
@@ -22,12 +23,14 @@ export default function CompiledReportModal({ report, onClose }: { report: Compi
   const { settings } = useSettings();
   const currency = settings.currency;
   // Total sales = Products sold + Other Income — every entry always adds.
-  // Amount sent chains straight off Total sales, backing out Expenses and
-  // Other Income again — which means Other Income cancels out of Amount
-  // sent entirely, leaving Amount sent = Products sold − Expenses.
+  // Products sold already includes sales paid directly to someone instead
+  // of the till (stock still deducted for those). Amount sent chains
+  // straight off Total sales, backing out Expenses, Other Income, and
+  // direct payments again — Other Income cancels out entirely, leaving
+  // Amount sent = Products sold − Expenses − Direct payments.
   const totalSales = report.posSales + report.totalOtherIncome;
   const profit = totalSales - report.totalPurch;
-  const netProfit = totalSales - report.totalExpenses - report.totalOtherIncome;
+  const netProfit = totalSales - report.totalExpenses - report.totalOtherIncome - report.totalDirectPayments;
 
   return (
     <div className="modal" id="reportModal">
@@ -160,6 +163,12 @@ export default function CompiledReportModal({ report, onClose }: { report: Compi
                 <tr>
                   <td>Other income</td>
                   <td className="tr">−{money(report.totalOtherIncome, currency)}</td>
+                </tr>
+              )}
+              {report.totalDirectPayments > 0 && (
+                <tr>
+                  <td>Paid directly (not till)</td>
+                  <td className="tr">−{money(report.totalDirectPayments, currency)}</td>
                 </tr>
               )}
               {report.totalOutstandingDebt > 0 && (
