@@ -8,6 +8,7 @@ import { useCart } from "@/contexts/CartContext";
 import { useOfflineQueue } from "@/contexts/OfflineQueueContext";
 import { money } from "@/lib/format";
 import CartPanel from "@/components/CartPanel";
+import PromptModal from "@/components/PromptModal";
 
 const NAV = [
   { href: "/dashboard", icon: "🏠", label: "Dashboard" },
@@ -155,8 +156,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </nav>
 
       {addPartyOpen && (
-        <AddPartyModal
-          label={mode === "SALE" ? "customer" : "vendor"}
+        <PromptModal
+          title={`Add new ${mode === "SALE" ? "customer" : "vendor"}`}
+          placeholder={`e.g. ${mode === "SALE" ? "Jane Doe" : "ABC Suppliers"}`}
+          saveLabel={`Save ${mode === "SALE" ? "customer" : "vendor"}`}
+          required
+          requiredMessage={`Enter the ${mode === "SALE" ? "customer" : "vendor"}'s name.`}
           onCancel={() => setAddPartyOpen(false)}
           onSave={async (name) => {
             const res = await addParty(name);
@@ -168,37 +173,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           }}
         />
       )}
-    </div>
-  );
-}
-
-function AddPartyModal({ label, onCancel, onSave }: { label: string; onCancel: () => void; onSave: (name: string) => Promise<void> }) {
-  const [name, setName] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  const save = async () => {
-    if (!name.trim()) return alert(`Enter the ${label}'s name.`);
-    setSaving(true);
-    try {
-      await onSave(name);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="modal">
-      <div className="mbox">
-        <h3>Add new {label}</h3>
-        <label>Name</label>
-        <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={`e.g. ${label === "customer" ? "Jane Doe" : "ABC Suppliers"}`} />
-        <button className="checkout" style={{ background: "var(--teal)" }} disabled={saving} onClick={save}>
-          {saving ? "Saving…" : `Save ${label}`}
-        </button>
-        <button className="btn sec" onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
     </div>
   );
 }

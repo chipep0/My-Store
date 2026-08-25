@@ -7,6 +7,7 @@ import { useCatalog, deriveCategories } from "@/hooks/useCatalog";
 import type { Product } from "@/lib/types";
 import ProductCard from "@/components/ProductCard";
 import ProductModal from "@/components/ProductModal";
+import Loading from "@/components/Loading";
 
 export default function PosPage() {
   const { canPurchase, isManager } = useAuth();
@@ -86,10 +87,7 @@ export default function PosPage() {
       )}
       <div className="grid">
         {loading ? (
-          <div className="empty">
-            <div className="spin" />
-            Loading…
-          </div>
+          <Loading />
         ) : filtered.length === 0 ? (
           <div className="empty">No products match.</div>
         ) : (

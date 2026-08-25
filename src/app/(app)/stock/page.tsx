@@ -9,6 +9,7 @@ import { useCatalog, deriveCategories } from "@/hooks/useCatalog";
 import { money, unitPriceFor, stockClass, stockBadgeVariant, stockTag } from "@/lib/format";
 import type { Product } from "@/lib/types";
 import ProductModal from "@/components/ProductModal";
+import Loading from "@/components/Loading";
 
 export default function StockPage() {
   const { isManager, canPurchase } = useAuth();
@@ -50,10 +51,7 @@ export default function StockPage() {
       </div>
       <input placeholder="Search products…" style={{ marginBottom: 12 }} value={search} onChange={(e) => setSearch(e.target.value)} />
       {loading ? (
-        <div className="empty">
-          <div className="spin" />
-          Loading…
-        </div>
+        <Loading />
       ) : !products.length ? (
         <div className="empty">No products yet. Tap ＋ Add product to start your catalog.</div>
       ) : !filtered.length ? (

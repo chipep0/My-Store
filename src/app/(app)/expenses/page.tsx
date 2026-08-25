@@ -3,17 +3,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { guardedDelete, guardedUpdate } from "@/lib/db";
 import { useSettings } from "@/contexts/SettingsContext";
-import { money, localDateStr } from "@/lib/format";
+import { money, localDateStr, defaultFromDate } from "@/lib/format";
 import { groupByPeriod, GroupMode } from "@/lib/grouping";
 import type { Expense, OtherIncome } from "@/lib/types";
+import Loading from "@/components/Loading";
 
 type Tab = "expenses" | "income";
-
-const defaultFrom = () => {
-  const d = new Date();
-  d.setDate(d.getDate() - 30);
-  return localDateStr(d);
-};
 
 export default function ExpensesPage() {
   const { settings } = useSettings();
@@ -24,7 +19,7 @@ export default function ExpensesPage() {
   const [groupBy, setGroupBy] = useState<GroupMode>("day");
   const [expModal, setExpModal] = useState<"add" | Expense | null>(null);
   const [incModal, setIncModal] = useState<"add" | OtherIncome | null>(null);
-  const [from, setFrom] = useState(defaultFrom);
+  const [from, setFrom] = useState(defaultFromDate);
   const [to, setTo] = useState(() => localDateStr(new Date()));
   const [search, setSearch] = useState("");
 
@@ -121,10 +116,7 @@ export default function ExpensesPage() {
       </div>
 
       {loading ? (
-        <div className="empty">
-          <div className="spin" />
-          Loading…
-        </div>
+        <Loading />
       ) : tab === "expenses" ? (
         !filteredExpenses.length ? (
           <div className="empty">No expenses match this date range/search.</div>

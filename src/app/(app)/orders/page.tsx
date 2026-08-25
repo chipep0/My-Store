@@ -5,15 +5,10 @@ import { supabase } from "@/lib/supabase";
 import { guardedUpdate } from "@/lib/db";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
-import { money, localDateStr } from "@/lib/format";
+import { money, localDateStr, defaultFromDate } from "@/lib/format";
 import type { Order, OrderStatus } from "@/lib/types";
 import ReceiptModal, { ReceiptData } from "@/components/ReceiptModal";
-
-const defaultFrom = () => {
-  const d = new Date();
-  d.setDate(d.getDate() - 30);
-  return localDateStr(d);
-};
+import Loading from "@/components/Loading";
 
 export default function OrdersPage() {
   const { isManager } = useAuth();
@@ -21,7 +16,7 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [receipt, setReceipt] = useState<ReceiptData | null>(null);
-  const [from, setFrom] = useState(defaultFrom);
+  const [from, setFrom] = useState(defaultFromDate);
   const [to, setTo] = useState(() => localDateStr(new Date()));
   const [search, setSearch] = useState("");
 
@@ -106,10 +101,7 @@ export default function OrdersPage() {
       </div>
 
       {loading ? (
-        <div className="empty">
-          <div className="spin" />
-          Loading…
-        </div>
+        <Loading />
       ) : orders.length === 0 ? (
         <div className="empty">No orders match this date range/search.</div>
       ) : (

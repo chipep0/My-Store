@@ -8,6 +8,7 @@ import { money, localDateStr } from "@/lib/format";
 import { supabase } from "@/lib/supabase";
 import ReceiptModal, { ReceiptData } from "@/components/ReceiptModal";
 import TenderModal from "@/components/TenderModal";
+import PromptModal from "@/components/PromptModal";
 
 function isNetworkError(err: unknown): boolean {
   if (err instanceof TypeError) return true;
@@ -246,44 +247,19 @@ export default function CartPanel({ open, onClose }: { open: boolean; onClose: (
       </div>
       {tenderOpen && <TenderModal grand={totals.grand} currency={currency} onCancel={() => setTenderOpen(false)} onConfirm={finalize} />}
       {directOpen && (
-        <DirectPaymentModal grand={totals.grand} currency={currency} onCancel={() => setDirectOpen(false)} onConfirm={(paidTo) => finalize(totals.grand, paidTo)} />
+        <PromptModal
+          title={`Paid directly — ${money(totals.grand, currency)}`}
+          description="The goods left as a normal sale (stock still deducts), but the payment went straight to a person/account instead of the till."
+          label="Sent to (person / account)"
+          placeholder="e.g. Mr Romeo, or the bank account"
+          saveLabel="Confirm sale"
+          required
+          requiredMessage="Enter who the payment was sent to."
+          onCancel={() => setDirectOpen(false)}
+          onSave={(paidTo) => finalize(totals.grand, paidTo.trim())}
+        />
       )}
       {receipt && <ReceiptModal data={receipt} onClose={() => setReceipt(null)} />}
     </>
-  );
-}
-
-function DirectPaymentModal({ grand, currency, onCancel, onConfirm }: { grand: number; currency: string; onCancel: () => void; onConfirm: (paidTo: string) => void }) {
-  const [paidTo, setPaidTo] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  const confirm = async () => {
-    if (!paidTo.trim()) return alert("Enter who the payment was sent to.");
-    setSaving(true);
-    try {
-      await onConfirm(paidTo.trim());
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="modal">
-      <div className="mbox">
-        <h3>Paid directly — {money(grand, currency)}</h3>
-        <div style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 10px" }}>
-          The goods left as a normal sale (stock still deducts), but the payment went straight to a person/account instead of
-          the till.
-        </div>
-        <label>Sent to (person / account)</label>
-        <input autoFocus value={paidTo} onChange={(e) => setPaidTo(e.target.value)} placeholder="e.g. Mr Romeo, or the bank account" />
-        <button className="checkout" style={{ background: "var(--teal)" }} disabled={saving} onClick={confirm}>
-          {saving ? "Saving…" : "Confirm sale"}
-        </button>
-        <button className="btn sec" onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
-    </div>
   );
 }

@@ -5,6 +5,8 @@ import { supabase } from "@/lib/supabase";
 import { guardedDelete, guardedUpdate } from "@/lib/db";
 import { useSettings } from "@/contexts/SettingsContext";
 import { money } from "@/lib/format";
+import Loading from "@/components/Loading";
+import PromptModal from "@/components/PromptModal";
 
 type Tab = "customers" | "vendors";
 
@@ -90,10 +92,7 @@ export default function PartiesPage() {
       </div>
 
       {loading ? (
-        <div className="empty">
-          <div className="spin" />
-          Loading…
-        </div>
+        <Loading />
       ) : !list.length ? (
         <div className="empty">No {tab} yet — add one from the POS party picker.</div>
       ) : (
@@ -115,37 +114,14 @@ export default function PartiesPage() {
         ))
       )}
 
-      {renaming && <RenameModal party={renaming} label={tab === "customers" ? "customer" : "vendor"} onCancel={() => setRenaming(null)} onSave={(name) => rename(renaming, name)} />}
-    </div>
-  );
-}
-
-function RenameModal({ party, label, onCancel, onSave }: { party: Party; label: string; onCancel: () => void; onSave: (name: string) => Promise<void> | void }) {
-  const [name, setName] = useState(party.name);
-  const [saving, setSaving] = useState(false);
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      await onSave(name);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="modal">
-      <div className="mbox">
-        <h3>Rename {label}</h3>
-        <label>Name</label>
-        <input autoFocus value={name} onChange={(e) => setName(e.target.value)} />
-        <button className="checkout" style={{ background: "var(--teal)" }} disabled={saving} onClick={save}>
-          {saving ? "Saving…" : "Save"}
-        </button>
-        <button className="btn sec" onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
+      {renaming && (
+        <PromptModal
+          title={`Rename ${tab === "customers" ? "customer" : "vendor"}`}
+          initialValue={renaming.name}
+          onCancel={() => setRenaming(null)}
+          onSave={(name) => rename(renaming, name)}
+        />
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { money } from "@/lib/format";
 import type { OrderPayment } from "@/lib/types";
+import Loading from "@/components/Loading";
 
 interface DebtOrder {
   id: number;
@@ -180,10 +181,7 @@ export default function DebtsPage() {
       )}
 
       {loading ? (
-        <div className="empty">
-          <div className="spin" />
-          Loading…
-        </div>
+        <Loading />
       ) : !groups.length ? (
         <div className="empty">No outstanding debts. Everyone's paid up. 🎉</div>
       ) : (

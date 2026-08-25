@@ -5,9 +5,8 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { money, signedMoney, localDateStr } from "@/lib/format";
-
-interface OrdRow { id: number; type: "SALE" | "PURCHASE"; status: string; balance_due?: number; paid_to?: string | null }
-interface ItemRow { order_id: number; line_total: number }
+import { fetchSalesAggregate, emptySalesAggregate } from "@/lib/salesAggregate";
+import Loading from "@/components/Loading";
 
 const QUICK_LINKS = [
   { href: "/pos", icon: "🛒", label: "POS" },
@@ -45,58 +44,22 @@ export default function DashboardPage() {
     const weekStart = new Date(dayStart);
     weekStart.setDate(weekStart.getDate() - 6);
 
-    const [
-      { data: todayOrders },
-      { data: todayItems },
-      { data: expenses },
-      { data: otherIncome },
-      { data: debtOrders },
-      { data: prods },
-      { data: inv },
-      { data: weekOrders },
-      { data: weekItems },
-      { data: recent },
-    ] = await Promise.all([
-      supabase.from("posinv_orders").select("id,type,status,balance_due,paid_to").gte("order_on", dayStart.toISOString()).lte("order_on", dayEnd.toISOString()),
-      supabase
-        .from("posinv_order_items")
-        .select("order_id,line_total,posinv_orders!inner(order_on)")
-        .gte("posinv_orders.order_on", dayStart.toISOString())
-        .lte("posinv_orders.order_on", dayEnd.toISOString()),
+    const [todayAgg, weekAgg, { data: expenses }, { data: otherIncome }, { data: debtOrders }, { data: prods }, { data: inv }, { data: recent }] = await Promise.all([
+      fetchSalesAggregate(dayStart, dayEnd).catch(() => emptySalesAggregate()),
+      fetchSalesAggregate(weekStart, dayEnd).catch(() => emptySalesAggregate()),
       supabase.from("posinv_expenses").select("amount").eq("expense_on", today),
       supabase.from("posinv_other_income").select("amount").eq("received_on", today),
       supabase.from("posinv_orders").select("party,balance_due").eq("type", "SALE").eq("status", "Open"),
       supabase.from("posinv_products").select("sku,active"),
       supabase.from("posinv_inventory").select("sku,on_hand"),
-      supabase.from("posinv_orders").select("id,type,status,order_on").eq("type", "SALE").gte("order_on", weekStart.toISOString()).lte("order_on", dayEnd.toISOString()),
-      supabase
-        .from("posinv_order_items")
-        .select("order_id,line_total,posinv_orders!inner(order_on,type,status)")
-        .gte("posinv_orders.order_on", weekStart.toISOString())
-        .lte("posinv_orders.order_on", dayEnd.toISOString()),
       supabase.from("posinv_orders").select("id,order_on,party,status,total_paid").eq("type", "SALE").order("order_on", { ascending: false }).limit(6),
     ]);
 
     // ---- today's KPI cards ----
-    const ordMap: Record<number, OrdRow> = {};
-    (todayOrders || []).forEach((o) => (ordMap[o.id] = o as OrdRow));
-    let posSales = 0,
-      totalDirectPayments = 0,
-      totalOutstandingToday = 0;
-    (todayOrders || []).forEach((o) => {
-      if (o.type === "SALE" && o.status === "Open") totalOutstandingToday += Number(o.balance_due) || 0;
-    });
-    (todayItems as ItemRow[] || []).forEach((it) => {
-      const o = ordMap[it.order_id];
-      if (!o || o.type !== "SALE" || o.status === "Void" || o.status === "Refund") return;
-      const lt = Number(it.line_total) || 0;
-      posSales += lt;
-      if (o.paid_to) totalDirectPayments += lt;
-    });
     const totalExpenses = (expenses || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const totalOtherIncome = (otherIncome || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const totalSales = posSales + totalOtherIncome;
-    const cashAtHand = totalSales - totalExpenses - totalOutstandingToday - totalDirectPayments;
+    const totalSales = todayAgg.posSales + totalOtherIncome;
+    const cashAtHand = totalSales - totalExpenses - todayAgg.totalOutstandingDebt - todayAgg.totalDirectPayments;
     const totalOwed = (debtOrders || []).reduce((s, o) => s + (Number(o.balance_due) || 0), 0);
 
     const stockMap: Record<string, number> = {};
@@ -106,11 +69,9 @@ export default function DashboardPage() {
 
     // ---- this week: sales-by-day line chart + status donut + % paid ----
     const dayTotals: Record<string, number> = {};
-    ((weekItems || []) as unknown as (ItemRow & { posinv_orders: { order_on: string; type: string; status: string } })[]).forEach((it) => {
-      const o = it.posinv_orders;
-      if (!o || o.type !== "SALE" || o.status === "Void" || o.status === "Refund") return;
-      const key = localDateStr(new Date(o.order_on));
-      dayTotals[key] = (dayTotals[key] || 0) + (Number(it.line_total) || 0);
+    weekAgg.validSaleItems.forEach((it) => {
+      const key = localDateStr(new Date(it.order_on));
+      dayTotals[key] = (dayTotals[key] || 0) + it.line_total;
     });
     const weekArr: { label: string; total: number }[] = [];
     const d = new Date(weekStart);
@@ -121,18 +82,8 @@ export default function DashboardPage() {
     }
     setWeekSales(weekArr);
 
-    const statusMap: Record<string, number> = {};
-    let paidCount = 0,
-      countedCount = 0;
-    (weekOrders || []).forEach((o) => {
-      statusMap[o.status] = (statusMap[o.status] || 0) + 1;
-      if (o.status !== "Void") {
-        countedCount++;
-        if (o.status === "Paid") paidCount++;
-      }
-    });
-    setStatusCounts(["Paid", "Open", "Void", "Refund"].map((s) => ({ status: s, count: statusMap[s] || 0 })).filter((s) => s.count > 0));
-    setPctPaid(countedCount ? Math.round((paidCount / countedCount) * 100) : 100);
+    setStatusCounts(["Paid", "Open", "Void", "Refund"].map((s) => ({ status: s, count: weekAgg.statusCounts[s] || 0 })).filter((s) => s.count > 0));
+    setPctPaid(weekAgg.saleOrderCount ? Math.round((weekAgg.paidCount / weekAgg.saleOrderCount) * 100) : 100);
 
     // ---- recent orders + top debts ----
     setRecentOrders((recent || []).map((o) => ({ id: o.id, party: o.party || "Walk-in", status: o.status, total: Number(o.total_paid) || 0, on: o.order_on })));
@@ -194,10 +145,7 @@ export default function DashboardPage() {
       <div className="greetSub">Here&apos;s what&apos;s happening in your store today.</div>
 
       {loading ? (
-        <div className="empty">
-          <div className="spin" />
-          Loading…
-        </div>
+        <Loading />
       ) : (
         <>
           <div className="kpiGrid">

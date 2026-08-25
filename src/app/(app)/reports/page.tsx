@@ -6,11 +6,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useCart } from "@/contexts/CartContext";
 import { money, signedMoney, qtyBoxLabel, localDateStr } from "@/lib/format";
+import { fetchSalesAggregate, emptySalesAggregate } from "@/lib/salesAggregate";
 import type { PeriodArchive } from "@/lib/types";
 import CompiledReportModal, { CompiledReport } from "@/components/CompiledReportModal";
-
-interface OrdRow { id: number; order_on: string; type: "SALE" | "PURCHASE"; status: string; balance_due?: number; paid_to?: string | null }
-interface ItemRow { order_id: number; sku: string; product_name: string; line_total: number; base_qty: number }
+import Loading from "@/components/Loading";
 
 function BarRow({ label, val, max, currency, sub }: { label: string; val: number; max: number; currency: string; sub?: string }) {
   const pct = max > 0 ? Math.max(4, Math.round((val / max) * 100)) : 4;
@@ -52,17 +51,16 @@ export default function ReportsPage() {
     since.setDate(1);
     since.setHours(0, 0, 0, 0);
     since.setMonth(since.getMonth() - 11);
+    // No real upper bound on the original query (just .gte(since)) — mirror
+    // that with a far-future end rather than "now", so nothing is excluded.
+    const farFuture = new Date();
+    farFuture.setFullYear(farFuture.getFullYear() + 10);
 
-    const [{ data: orders }, { data: items }, { data: expenses }, { data: otherIncome }, { data: prods }, { data: inv }, { data: arch }] = await Promise.all([
-      supabase.from("posinv_orders").select("id,order_on,type,status,balance_due,paid_to").gte("order_on", since.toISOString()),
-      // Scoped via the parent order's date, not fetched unfiltered — an
-      // unbounded select silently truncates at Supabase's default 1000-row
-      // cap once the shop has logged that many line items in total, which
-      // quietly drops the newest sales from every report below.
-      supabase
-        .from("posinv_order_items")
-        .select("order_id,sku,product_name,line_total,base_qty,posinv_orders!inner(order_on)")
-        .gte("posinv_orders.order_on", since.toISOString()),
+    const [agg, { data: expenses }, { data: otherIncome }, { data: prods }, { data: inv }, { data: arch }] = await Promise.all([
+      // Falls back to an empty aggregate on failure (rather than rejecting
+      // the whole Promise.all) so a sales-query error doesn't also blank
+      // out the unrelated stock/archive sections below.
+      fetchSalesAggregate(since, farFuture).catch(() => emptySalesAggregate()),
       supabase.from("posinv_expenses").select("amount").gte("expense_on", localDateStr(since)),
       supabase.from("posinv_other_income").select("amount").gte("received_on", localDateStr(since)),
       supabase.from("posinv_products").select("sku,name,category,units_per_box,active"),
@@ -73,51 +71,30 @@ export default function ReportsPage() {
     const upbMap: Record<string, number> = {};
     (prods || []).forEach((p) => (upbMap[p.sku] = Number(p.units_per_box) || 1));
 
-    const ordMap: Record<number, OrdRow> = {};
-    (orders || []).forEach((o) => (ordMap[o.id] = o as OrdRow));
-
-    let posSales = 0,
-      totalPurch = 0,
-      paidCount = 0,
-      saleOrderCount = 0,
-      totalOutstandingDebt = 0,
-      totalDirectPayments = 0;
-    (orders || []).forEach((o) => {
-      if (o.type === "SALE" && o.status !== "Void") {
-        saleOrderCount++;
-        if (o.status === "Paid") paidCount++;
-        if (o.status === "Open") totalOutstandingDebt += Number(o.balance_due) || 0;
-      }
-    });
-    const bySku: Record<string, { name: string; total: number; qty: number }> = {};
-    const byMonth: Record<string, number> = {};
-    (items as ItemRow[] || []).forEach((it) => {
-      const o = ordMap[it.order_id];
-      if (!o || o.status === "Void" || o.status === "Refund") return;
-      const lt = Number(it.line_total) || 0;
-      if (o.type === "SALE") {
-        posSales += lt;
-        if (o.paid_to) totalDirectPayments += lt;
-        const s = bySku[it.sku] || (bySku[it.sku] = { name: it.product_name, total: 0, qty: 0 });
-        s.total += lt;
-        s.qty += Number(it.base_qty) || 0;
-        const d = new Date(o.order_on);
-        const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
-        byMonth[key] = (byMonth[key] || 0) + lt;
-      } else if (o.type === "PURCHASE") {
-        totalPurch += lt;
-      }
-    });
     const totalExpenses = (expenses || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const totalOtherIncome = (otherIncome || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    setStats({ posSales, totalPurch, totalExpenses, totalOtherIncome, totalDirectPayments, totalOutstandingDebt, pctPaid: saleOrderCount ? Math.round((paidCount / saleOrderCount) * 100) : 100 });
+    setStats({
+      posSales: agg.posSales,
+      totalPurch: agg.totalPurch,
+      totalExpenses,
+      totalOtherIncome,
+      totalDirectPayments: agg.totalDirectPayments,
+      totalOutstandingDebt: agg.totalOutstandingDebt,
+      pctPaid: agg.saleOrderCount ? Math.round((agg.paidCount / agg.saleOrderCount) * 100) : 100,
+    });
 
-    const topArr = Object.entries(bySku)
+    const topArr = Object.entries(agg.bySku)
       .map(([sku, v]) => ({ sku, name: v.name, total: v.total, qty: v.qty, unitsPerBox: upbMap[sku] || 1 }))
       .sort((a, b) => b.total - a.total)
       .slice(0, 10);
     setTop(topArr);
 
+    const byMonth: Record<string, number> = {};
+    agg.validSaleItems.forEach((it) => {
+      const d = new Date(it.order_on);
+      const key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+      byMonth[key] = (byMonth[key] || 0) + it.line_total;
+    });
     const monthsArr: { label: string; total: number }[] = [];
     const d = new Date(since);
     for (let i = 0; i < 12; i++) {
@@ -145,68 +122,42 @@ export default function ReportsPage() {
   }, [loadDashboard]);
 
   const compile = async (start: Date, end: Date, label: string, rangeTxt: string) => {
-    const [{ data: orders, error: oe }, { data: items, error: ie }, { data: expenses, error: ee }, { data: otherIncome, error: oie }, { data: prods }] = await Promise.all([
-      supabase.from("posinv_orders").select("id,order_on,type,status,balance_due,paid_to").gte("order_on", start.toISOString()).lte("order_on", end.toISOString()),
-      supabase
-        .from("posinv_order_items")
-        .select("order_id,sku,product_name,line_total,base_qty,posinv_orders!inner(order_on)")
-        .gte("posinv_orders.order_on", start.toISOString())
-        .lte("posinv_orders.order_on", end.toISOString()),
-      supabase.from("posinv_expenses").select("category,description,amount").gte("expense_on", localDateStr(start)).lte("expense_on", localDateStr(end)),
-      supabase.from("posinv_other_income").select("category,recipient,description,amount").gte("received_on", localDateStr(start)).lte("received_on", localDateStr(end)),
-      supabase.from("posinv_products").select("sku,units_per_box"),
-    ]);
-    if (oe || ie || ee || oie) return alert("Could not compile report: " + (oe || ie || ee || oie)?.message);
+    let agg;
+    let expenses, otherIncome, prods;
+    try {
+      const [aggResult, { data: exp, error: ee }, { data: inc, error: oie }, { data: p }] = await Promise.all([
+        fetchSalesAggregate(start, end),
+        supabase.from("posinv_expenses").select("category,description,amount").gte("expense_on", localDateStr(start)).lte("expense_on", localDateStr(end)),
+        supabase.from("posinv_other_income").select("category,recipient,description,amount").gte("received_on", localDateStr(start)).lte("received_on", localDateStr(end)),
+        supabase.from("posinv_products").select("sku,units_per_box"),
+      ]);
+      if (ee || oie) throw new Error((ee || oie)?.message);
+      agg = aggResult;
+      expenses = exp;
+      otherIncome = inc;
+      prods = p;
+    } catch (err) {
+      return alert("Could not compile report: " + (err instanceof Error ? err.message : String(err)));
+    }
 
     const upbMap: Record<string, number> = {};
     (prods || []).forEach((p) => (upbMap[p.sku] = Number(p.units_per_box) || 1));
-    const ordMap: Record<number, OrdRow> = {};
-    (orders || []).forEach((o) => (ordMap[o.id] = o as OrdRow));
 
-    let posSales = 0,
-      totalPurch = 0,
-      totalOutstandingDebt = 0,
-      totalDirectPayments = 0;
-    const bySku: Record<string, { name: string; total: number; qty: number; directPayments: Record<string, number> }> = {};
-    const byPurchSku: Record<string, { name: string; total: number; qty: number }> = {};
-    const counted = new Set<number>();
-    (items as ItemRow[] || []).forEach((it) => {
-      const o = ordMap[it.order_id];
-      if (!o || o.status === "Void" || o.status === "Refund") return;
-      const lt = Number(it.line_total) || 0;
-      if (o.type === "SALE") {
-        posSales += lt;
-        if (o.paid_to) totalDirectPayments += lt;
-        const s = bySku[it.sku] || (bySku[it.sku] = { name: it.product_name, total: 0, qty: 0, directPayments: {} });
-        s.total += lt;
-        s.qty += Number(it.base_qty) || 0;
-        if (o.paid_to) s.directPayments[o.paid_to] = (s.directPayments[o.paid_to] || 0) + lt;
-      } else if (o.type === "PURCHASE") {
-        totalPurch += lt;
-        const s = byPurchSku[it.sku] || (byPurchSku[it.sku] = { name: it.product_name, total: 0, qty: 0 });
-        s.total += lt;
-        s.qty += Number(it.base_qty) || 0;
-      }
-      counted.add(o.id);
-    });
-    (orders || []).forEach((o) => {
-      if (o.type === "SALE" && o.status === "Open") totalOutstandingDebt += Number(o.balance_due) || 0;
-    });
     const totalExpenses = (expenses || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
     const totalOtherIncome = (otherIncome || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
 
     setReport({
       label,
       rangeTxt,
-      orderCount: counted.size,
-      posSales,
-      totalPurch,
+      orderCount: agg.countedOrderIds.size,
+      posSales: agg.posSales,
+      totalPurch: agg.totalPurch,
       totalExpenses,
       totalOtherIncome,
-      totalDirectPayments,
-      totalOutstandingDebt,
+      totalDirectPayments: agg.totalDirectPayments,
+      totalOutstandingDebt: agg.totalOutstandingDebt,
       showPurchases,
-      products: Object.entries(bySku)
+      products: Object.entries(agg.bySku)
         .map(([sku, v]) => ({
           sku,
           name: v.name,
@@ -218,7 +169,7 @@ export default function ReportsPage() {
         .sort((a, b) => b.total - a.total),
       expenseLines: expenses || [],
       otherIncomeLines: otherIncome || [],
-      purchases: Object.entries(byPurchSku)
+      purchases: Object.entries(agg.byPurchSku)
         .map(([sku, v]) => ({ sku, name: v.name, total: v.total, qty: v.qty, unitsPerBox: upbMap[sku] || 1 }))
         .sort((a, b) => b.total - a.total),
     });
@@ -324,10 +275,7 @@ export default function ReportsPage() {
       </div>
 
       {loading ? (
-        <div className="empty">
-          <div className="spin" />
-          Loading…
-        </div>
+        <Loading />
       ) : (
         <>
           <div className="stat4">
