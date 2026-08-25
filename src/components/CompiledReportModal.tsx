@@ -13,7 +13,7 @@ export interface CompiledReport {
   totalDirectPayments: number;
   totalOutstandingDebt: number;
   showPurchases: boolean;
-  products: { name: string; sku: string; total: number; qty: number; unitsPerBox: number }[];
+  products: { name: string; sku: string; total: number; qty: number; unitsPerBox: number; directPayments: { to: string; amount: number }[] }[];
   expenseLines: { category: string; description: string | null; amount: number }[];
   otherIncomeLines: { category: string; recipient: string | null; description: string | null; amount: number }[];
   purchases: { name: string; sku: string; total: number; qty: number; unitsPerBox: number }[];
@@ -55,6 +55,11 @@ export default function CompiledReportModal({ report, onClose }: { report: Compi
                       {p.name}
                       <br />
                       <span style={{ color: "#888", fontSize: 11 }}>{qtyBoxLabel(p.unitsPerBox, p.qty)}</span>
+                      {p.directPayments.map((d, i) => (
+                        <span key={i} style={{ color: "#888", fontSize: 11, display: "block" }}>
+                          💸 {money(d.amount, currency)} sent to {d.to}
+                        </span>
+                      ))}
                     </td>
                     <td className="tr">{money(p.total, currency)}</td>
                   </tr>

@@ -167,7 +167,7 @@ export default function ReportsPage() {
       totalPurch = 0,
       totalOutstandingDebt = 0,
       totalDirectPayments = 0;
-    const bySku: Record<string, { name: string; total: number; qty: number }> = {};
+    const bySku: Record<string, { name: string; total: number; qty: number; directPayments: Record<string, number> }> = {};
     const byPurchSku: Record<string, { name: string; total: number; qty: number }> = {};
     const counted = new Set<number>();
     (items as ItemRow[] || []).forEach((it) => {
@@ -177,9 +177,10 @@ export default function ReportsPage() {
       if (o.type === "SALE") {
         posSales += lt;
         if (o.paid_to) totalDirectPayments += lt;
-        const s = bySku[it.sku] || (bySku[it.sku] = { name: it.product_name, total: 0, qty: 0 });
+        const s = bySku[it.sku] || (bySku[it.sku] = { name: it.product_name, total: 0, qty: 0, directPayments: {} });
         s.total += lt;
         s.qty += Number(it.base_qty) || 0;
+        if (o.paid_to) s.directPayments[o.paid_to] = (s.directPayments[o.paid_to] || 0) + lt;
       } else if (o.type === "PURCHASE") {
         totalPurch += lt;
         const s = byPurchSku[it.sku] || (byPurchSku[it.sku] = { name: it.product_name, total: 0, qty: 0 });
@@ -206,7 +207,14 @@ export default function ReportsPage() {
       totalOutstandingDebt,
       showPurchases,
       products: Object.entries(bySku)
-        .map(([sku, v]) => ({ sku, name: v.name, total: v.total, qty: v.qty, unitsPerBox: upbMap[sku] || 1 }))
+        .map(([sku, v]) => ({
+          sku,
+          name: v.name,
+          total: v.total,
+          qty: v.qty,
+          unitsPerBox: upbMap[sku] || 1,
+          directPayments: Object.entries(v.directPayments).map(([to, amount]) => ({ to, amount })),
+        }))
         .sort((a, b) => b.total - a.total),
       expenseLines: expenses || [],
       otherIncomeLines: otherIncome || [],
