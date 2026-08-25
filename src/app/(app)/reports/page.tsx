@@ -36,7 +36,7 @@ export default function ReportsPage() {
   const currency = settings.currency;
   const [showPurchases, setShowPurchases] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ posSales: 0, totalPurch: 0, totalExpenses: 0, otherIncomeNet: 0, totalOutstandingDebt: 0, pctPaid: 100 });
+  const [stats, setStats] = useState({ posSales: 0, totalPurch: 0, totalExpenses: 0, totalOtherIncome: 0, totalOutstandingDebt: 0, pctPaid: 100 });
   const [top, setTop] = useState<{ sku: string; name: string; total: number; qty: number; unitsPerBox: number }[]>([]);
   const [months, setMonths] = useState<{ label: string; total: number }[]>([]);
   const [lowStock, setLowStock] = useState<{ sku: string; name: string; category: string | null; st: number }[]>([]);
@@ -64,7 +64,7 @@ export default function ReportsPage() {
         .select("order_id,sku,product_name,line_total,base_qty,posinv_orders!inner(order_on)")
         .gte("posinv_orders.order_on", since.toISOString()),
       supabase.from("posinv_expenses").select("amount").gte("expense_on", localDateStr(since)),
-      supabase.from("posinv_other_income").select("amount,is_positive").gte("received_on", localDateStr(since)),
+      supabase.from("posinv_other_income").select("amount").gte("received_on", localDateStr(since)),
       supabase.from("posinv_products").select("sku,name,category,units_per_box,active"),
       supabase.from("posinv_inventory").select("sku,on_hand"),
       supabase.from("posinv_period_archive").select("*").order("period_start", { ascending: false }).limit(20),
@@ -107,8 +107,8 @@ export default function ReportsPage() {
       }
     });
     const totalExpenses = (expenses || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const otherIncomeNet = (otherIncome || []).reduce((s, x) => s + (x.is_positive ? Number(x.amount) || 0 : -(Number(x.amount) || 0)), 0);
-    setStats({ posSales, totalPurch, totalExpenses, otherIncomeNet, totalOutstandingDebt, pctPaid: saleOrderCount ? Math.round((paidCount / saleOrderCount) * 100) : 100 });
+    const totalOtherIncome = (otherIncome || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    setStats({ posSales, totalPurch, totalExpenses, totalOtherIncome, totalOutstandingDebt, pctPaid: saleOrderCount ? Math.round((paidCount / saleOrderCount) * 100) : 100 });
 
     const topArr = Object.entries(bySku)
       .map(([sku, v]) => ({ sku, name: v.name, total: v.total, qty: v.qty, unitsPerBox: upbMap[sku] || 1 }))
@@ -151,7 +151,7 @@ export default function ReportsPage() {
         .gte("posinv_orders.order_on", start.toISOString())
         .lte("posinv_orders.order_on", end.toISOString()),
       supabase.from("posinv_expenses").select("category,description,amount").gte("expense_on", localDateStr(start)).lte("expense_on", localDateStr(end)),
-      supabase.from("posinv_other_income").select("category,recipient,description,amount,is_positive").gte("received_on", localDateStr(start)).lte("received_on", localDateStr(end)),
+      supabase.from("posinv_other_income").select("category,recipient,description,amount").gte("received_on", localDateStr(start)).lte("received_on", localDateStr(end)),
       supabase.from("posinv_products").select("sku,units_per_box"),
     ]);
     if (oe || ie || ee || oie) return alert("Could not compile report: " + (oe || ie || ee || oie)?.message);
@@ -188,7 +188,7 @@ export default function ReportsPage() {
       if (o.type === "SALE" && o.status === "Open") totalOutstandingDebt += Number(o.balance_due) || 0;
     });
     const totalExpenses = (expenses || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const otherIncomeNet = (otherIncome || []).reduce((s, x) => s + (x.is_positive ? Number(x.amount) || 0 : -(Number(x.amount) || 0)), 0);
+    const totalOtherIncome = (otherIncome || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
 
     setReport({
       label,
@@ -197,7 +197,7 @@ export default function ReportsPage() {
       posSales,
       totalPurch,
       totalExpenses,
-      otherIncomeNet,
+      totalOtherIncome,
       totalOutstandingDebt,
       showPurchases,
       products: Object.entries(bySku)
@@ -259,18 +259,18 @@ export default function ReportsPage() {
     router.push("/pos");
   };
 
-  // Total sales = Products sold + Other Income, signed (subtracts by
-  // default, adds only if flagged "genuine extra income"). Cash at hand
-  // backs out Expenses (assumed paid from that same till cash) and unpaid
-  // credit sales — a debt counts toward Total sales the moment it's rung
-  // up, but isn't cash until collected. Amount sent chains straight off
-  // Total sales, backing out Expenses and Other Income again — which
-  // means Other Income cancels out of Amount sent entirely (it only ever
-  // moves Total sales), leaving Amount sent = Products sold − Expenses.
-  const totalSales = stats.posSales + stats.otherIncomeNet;
+  // Total sales = Products sold + Other Income — every entry always adds,
+  // regardless of how it's flagged. Cash at hand backs out Expenses
+  // (assumed paid from that same till cash) and unpaid credit sales — a
+  // debt counts toward Total sales the moment it's rung up, but isn't
+  // cash until collected. Amount sent chains straight off Total sales,
+  // backing out Expenses and Other Income again — which means Other
+  // Income cancels out of Amount sent entirely, leaving Amount sent =
+  // Products sold − Expenses.
+  const totalSales = stats.posSales + stats.totalOtherIncome;
   const cashAtHand = totalSales - stats.totalExpenses - stats.totalOutstandingDebt;
   const profit = totalSales - stats.totalPurch;
-  const netProfit = totalSales - stats.totalExpenses - stats.otherIncomeNet;
+  const netProfit = totalSales - stats.totalExpenses - stats.totalOtherIncome;
   const maxTop = top.length ? top[0].total : 0;
   const maxMonth = Math.max(1, ...months.map((m) => m.total));
 
@@ -320,6 +320,12 @@ export default function ReportsPage() {
               <div className="lbl">Total sales</div>
               <div className="val">{money(totalSales, currency)}</div>
             </div>
+            {stats.totalOtherIncome > 0 && (
+              <div className="stat">
+                <div className="lbl">Other income</div>
+                <div className="val">{money(stats.totalOtherIncome, currency)}</div>
+              </div>
+            )}
             <div className="stat">
               <div className="lbl">Cash at hand</div>
               <div className="val">{money(cashAtHand, currency)}</div>

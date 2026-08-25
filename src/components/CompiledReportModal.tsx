@@ -9,27 +9,25 @@ export interface CompiledReport {
   posSales: number;
   totalPurch: number;
   totalExpenses: number;
-  otherIncomeNet: number;
+  totalOtherIncome: number;
   totalOutstandingDebt: number;
   showPurchases: boolean;
   products: { name: string; sku: string; total: number; qty: number; unitsPerBox: number }[];
   expenseLines: { category: string; description: string | null; amount: number }[];
-  otherIncomeLines: { category: string; recipient: string | null; description: string | null; amount: number; is_positive: boolean }[];
+  otherIncomeLines: { category: string; recipient: string | null; description: string | null; amount: number }[];
   purchases: { name: string; sku: string; total: number; qty: number; unitsPerBox: number }[];
 }
 
 export default function CompiledReportModal({ report, onClose }: { report: CompiledReport; onClose: () => void }) {
   const { settings } = useSettings();
   const currency = settings.currency;
-  // Total sales = Products sold + Other Income, signed (subtracts by
-  // default, adds only if flagged "genuine extra income"). Amount sent
-  // chains straight off Total sales, backing out Expenses and Other Income
-  // again — which means Other Income cancels out of Amount sent entirely
-  // (it only ever moves Total sales), leaving Amount sent = Products sold
-  // − Expenses.
-  const totalSales = report.posSales + report.otherIncomeNet;
+  // Total sales = Products sold + Other Income — every entry always adds.
+  // Amount sent chains straight off Total sales, backing out Expenses and
+  // Other Income again — which means Other Income cancels out of Amount
+  // sent entirely, leaving Amount sent = Products sold − Expenses.
+  const totalSales = report.posSales + report.totalOtherIncome;
   const profit = totalSales - report.totalPurch;
-  const netProfit = totalSales - report.totalExpenses - report.otherIncomeNet;
+  const netProfit = totalSales - report.totalExpenses - report.totalOtherIncome;
 
   return (
     <div className="modal" id="reportModal">
@@ -94,7 +92,7 @@ export default function CompiledReportModal({ report, onClose }: { report: Compi
           {report.otherIncomeLines.length > 0 && (
             <>
               <hr />
-              <div className="c">Other income (nets into Total sales)</div>
+              <div className="c">Other income (added to Total sales)</div>
               <table>
                 <tbody>
                   {report.otherIncomeLines.map((x, i) => (
@@ -113,10 +111,8 @@ export default function CompiledReportModal({ report, onClose }: { report: Compi
                             <span style={{ color: "#888", fontSize: 11 }}>{x.description}</span>
                           </>
                         )}
-                        <br />
-                        <span style={{ color: "#888", fontSize: 11 }}>{x.is_positive ? "+ added to Total sales" : "− subtracted from Total sales"}</span>
                       </td>
-                      <td className="tr">{x.is_positive ? money(x.amount, currency) : "−" + money(x.amount, currency)}</td>
+                      <td className="tr">{money(x.amount, currency)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -160,6 +156,12 @@ export default function CompiledReportModal({ report, onClose }: { report: Compi
                 <td>Total sales</td>
                 <td className="tr">{money(totalSales, currency)}</td>
               </tr>
+              {report.totalOtherIncome > 0 && (
+                <tr>
+                  <td>Other income</td>
+                  <td className="tr">{money(report.totalOtherIncome, currency)}</td>
+                </tr>
+              )}
               {report.totalOutstandingDebt > 0 && (
                 <tr>
                   <td>Owed (debts)</td>

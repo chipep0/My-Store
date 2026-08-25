@@ -89,7 +89,6 @@ export interface OtherIncome {
   recipient: string | null;
   description: string | null;
   amount: number;
-  is_positive: boolean;
 }
 
 export interface AppUser {
