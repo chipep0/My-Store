@@ -36,7 +36,7 @@ export default function ReportsPage() {
   const currency = settings.currency;
   const [showPurchases, setShowPurchases] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ posSales: 0, totalPurch: 0, totalExpenses: 0, totalOtherIncome: 0, totalOtherIncomeDeducted: 0, totalOutstandingDebt: 0, pctPaid: 100 });
+  const [stats, setStats] = useState({ posSales: 0, totalPurch: 0, totalExpenses: 0, otherIncomeNet: 0, totalOutstandingDebt: 0, pctPaid: 100 });
   const [top, setTop] = useState<{ sku: string; name: string; total: number; qty: number; unitsPerBox: number }[]>([]);
   const [months, setMonths] = useState<{ label: string; total: number }[]>([]);
   const [lowStock, setLowStock] = useState<{ sku: string; name: string; category: string | null; st: number }[]>([]);
@@ -64,7 +64,7 @@ export default function ReportsPage() {
         .select("order_id,sku,product_name,line_total,base_qty,posinv_orders!inner(order_on)")
         .gte("posinv_orders.order_on", since.toISOString()),
       supabase.from("posinv_expenses").select("amount").gte("expense_on", localDateStr(since)),
-      supabase.from("posinv_other_income").select("amount,deduct_from_sales").gte("received_on", localDateStr(since)),
+      supabase.from("posinv_other_income").select("amount,is_positive").gte("received_on", localDateStr(since)),
       supabase.from("posinv_products").select("sku,name,category,units_per_box,active"),
       supabase.from("posinv_inventory").select("sku,on_hand"),
       supabase.from("posinv_period_archive").select("*").order("period_start", { ascending: false }).limit(20),
@@ -107,9 +107,8 @@ export default function ReportsPage() {
       }
     });
     const totalExpenses = (expenses || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const totalOtherIncome = (otherIncome || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const totalOtherIncomeDeducted = (otherIncome || []).filter((x) => x.deduct_from_sales).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    setStats({ posSales, totalPurch, totalExpenses, totalOtherIncome, totalOtherIncomeDeducted, totalOutstandingDebt, pctPaid: saleOrderCount ? Math.round((paidCount / saleOrderCount) * 100) : 100 });
+    const otherIncomeNet = (otherIncome || []).reduce((s, x) => s + (x.is_positive ? Number(x.amount) || 0 : -(Number(x.amount) || 0)), 0);
+    setStats({ posSales, totalPurch, totalExpenses, otherIncomeNet, totalOutstandingDebt, pctPaid: saleOrderCount ? Math.round((paidCount / saleOrderCount) * 100) : 100 });
 
     const topArr = Object.entries(bySku)
       .map(([sku, v]) => ({ sku, name: v.name, total: v.total, qty: v.qty, unitsPerBox: upbMap[sku] || 1 }))
@@ -152,7 +151,7 @@ export default function ReportsPage() {
         .gte("posinv_orders.order_on", start.toISOString())
         .lte("posinv_orders.order_on", end.toISOString()),
       supabase.from("posinv_expenses").select("category,description,amount").gte("expense_on", localDateStr(start)).lte("expense_on", localDateStr(end)),
-      supabase.from("posinv_other_income").select("category,recipient,description,amount,deduct_from_sales").gte("received_on", localDateStr(start)).lte("received_on", localDateStr(end)),
+      supabase.from("posinv_other_income").select("category,recipient,description,amount,is_positive").gte("received_on", localDateStr(start)).lte("received_on", localDateStr(end)),
       supabase.from("posinv_products").select("sku,units_per_box"),
     ]);
     if (oe || ie || ee || oie) return alert("Could not compile report: " + (oe || ie || ee || oie)?.message);
@@ -189,8 +188,7 @@ export default function ReportsPage() {
       if (o.type === "SALE" && o.status === "Open") totalOutstandingDebt += Number(o.balance_due) || 0;
     });
     const totalExpenses = (expenses || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const totalOtherIncome = (otherIncome || []).reduce((s, x) => s + (Number(x.amount) || 0), 0);
-    const totalOtherIncomeDeducted = (otherIncome || []).filter((x) => x.deduct_from_sales).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+    const otherIncomeNet = (otherIncome || []).reduce((s, x) => s + (x.is_positive ? Number(x.amount) || 0 : -(Number(x.amount) || 0)), 0);
 
     setReport({
       label,
@@ -199,8 +197,7 @@ export default function ReportsPage() {
       posSales,
       totalPurch,
       totalExpenses,
-      totalOtherIncome,
-      totalOtherIncomeDeducted,
+      otherIncomeNet,
       totalOutstandingDebt,
       showPurchases,
       products: Object.entries(bySku)
@@ -262,20 +259,17 @@ export default function ReportsPage() {
     router.push("/pos");
   };
 
-  // Total sales = till/register revenue only — Other Income never counts
-  // toward it, since it never touched the till, EXCEPT an entry flagged
-  // "deduct from sales" (money that WAS already rung up as a POS sale but
-  // actually left/never reached the till), which subtracts back out. Cash
-  // at hand backs out Expenses too (assumed paid out of that same till
-  // cash), and also backs out unpaid credit sales — a debt counts toward
-  // Total sales the moment it's rung up, but isn't cash until collected.
-  // Net profit still adds the FULL Other Income total back in regardless
-  // of the deduct flag, so a deducted entry's subtract-then-add-back nets
-  // to zero there — it's real revenue for the bottom line either way.
-  const totalSales = stats.posSales - stats.totalOtherIncomeDeducted;
+  // Total sales = till/register revenue, adjusted by Other Income entries
+  // netted straight in as signed amounts — an entry SUBTRACTS by default
+  // (money that went out or never reached the till), and only ADDS if
+  // explicitly marked "genuine extra income". Cash at hand backs out
+  // Expenses too (assumed paid out of that same till cash), and also
+  // backs out unpaid credit sales — a debt counts toward Total sales the
+  // moment it's rung up, but isn't cash until collected.
+  const totalSales = stats.posSales + stats.otherIncomeNet;
   const cashAtHand = totalSales - stats.totalExpenses - stats.totalOutstandingDebt;
   const profit = totalSales - stats.totalPurch;
-  const netProfit = (showPurchases ? profit : totalSales) - stats.totalExpenses + stats.totalOtherIncome;
+  const netProfit = (showPurchases ? profit : totalSales) - stats.totalExpenses;
   const maxTop = top.length ? top[0].total : 0;
   const maxMonth = Math.max(1, ...months.map((m) => m.total));
 
@@ -325,18 +319,6 @@ export default function ReportsPage() {
               <div className="lbl">Total sales</div>
               <div className="val">{money(totalSales, currency)}</div>
             </div>
-            {stats.totalOtherIncome > 0 && (
-              <div className="stat">
-                <div className="lbl">Other income (sent directly)</div>
-                <div className="val">{money(stats.totalOtherIncome, currency)}</div>
-              </div>
-            )}
-            {stats.totalOtherIncomeDeducted > 0 && (
-              <div className="stat">
-                <div className="lbl">Deducted from sales</div>
-                <div className="val">−{money(stats.totalOtherIncomeDeducted, currency)}</div>
-              </div>
-            )}
             <div className="stat">
               <div className="lbl">Cash at hand</div>
               <div className="val">{money(cashAtHand, currency)}</div>

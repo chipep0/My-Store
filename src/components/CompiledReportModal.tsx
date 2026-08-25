@@ -9,33 +9,25 @@ export interface CompiledReport {
   posSales: number;
   totalPurch: number;
   totalExpenses: number;
-  totalOtherIncome: number;
-  totalOtherIncomeDeducted: number;
+  otherIncomeNet: number;
   totalOutstandingDebt: number;
   showPurchases: boolean;
   products: { name: string; sku: string; total: number; qty: number; unitsPerBox: number }[];
   expenseLines: { category: string; description: string | null; amount: number }[];
-  otherIncomeLines: { category: string; recipient: string | null; description: string | null; amount: number; deduct_from_sales: boolean }[];
+  otherIncomeLines: { category: string; recipient: string | null; description: string | null; amount: number; is_positive: boolean }[];
   purchases: { name: string; sku: string; total: number; qty: number; unitsPerBox: number }[];
 }
 
 export default function CompiledReportModal({ report, onClose }: { report: CompiledReport; onClose: () => void }) {
   const { settings } = useSettings();
   const currency = settings.currency;
-  // Total sales = till/register revenue only — Other Income never counts
-  // toward it, since it never touched the till, EXCEPT an entry flagged
-  // "deduct from sales" (money that WAS already rung up as a POS sale but
-  // actually left/never reached the till), which subtracts back out. Cash
-  // at hand backs out Expenses too (assumed paid out of that same till
-  // cash), and also backs out unpaid credit sales — a debt counts toward
-  // Total sales the moment it's rung up, but isn't cash until collected.
-  // Net profit still adds the FULL Other Income total back in regardless
-  // of the deduct flag, so a deducted entry's subtract-then-add-back nets
-  // to zero there — it's real revenue for the bottom line either way.
-  const totalSales = report.posSales - report.totalOtherIncomeDeducted;
-  const cashAtHand = totalSales - report.totalExpenses - report.totalOutstandingDebt;
+  // Total sales = till/register revenue, adjusted by Other Income entries
+  // netted straight in as signed amounts — an entry SUBTRACTS by default
+  // (money that went out or never reached the till), and only ADDS if
+  // explicitly marked "genuine extra income".
+  const totalSales = report.posSales + report.otherIncomeNet;
   const profit = totalSales - report.totalPurch;
-  const netProfit = (report.showPurchases ? profit : totalSales) - report.totalExpenses + report.totalOtherIncome;
+  const netProfit = (report.showPurchases ? profit : totalSales) - report.totalExpenses;
 
   return (
     <div className="modal" id="reportModal">
@@ -49,65 +41,6 @@ export default function CompiledReportModal({ report, onClose }: { report: Compi
           <h4>{settings.store_name || "Store"}</h4>
           <div className="c">{report.label}</div>
           <div className="c">{report.rangeTxt}</div>
-          <hr />
-          <table>
-            <tbody>
-              <tr>
-                <td>Orders</td>
-                <td className="tr">{report.orderCount}</td>
-              </tr>
-              <tr>
-                <td>Total sales</td>
-                <td className="tr">{money(totalSales, currency)}</td>
-              </tr>
-              {report.totalOtherIncome > 0 && (
-                <tr>
-                  <td>Other income (sent directly)</td>
-                  <td className="tr">{money(report.totalOtherIncome, currency)}</td>
-                </tr>
-              )}
-              {report.totalOtherIncomeDeducted > 0 && (
-                <tr>
-                  <td>Deducted from sales</td>
-                  <td className="tr">−{money(report.totalOtherIncomeDeducted, currency)}</td>
-                </tr>
-              )}
-              <tr>
-                <td>Cash at hand</td>
-                <td className="tr">{money(cashAtHand, currency)}</td>
-              </tr>
-              {report.totalOutstandingDebt > 0 && (
-                <tr>
-                  <td>Owed (debts)</td>
-                  <td className="tr">{money(report.totalOutstandingDebt, currency)}</td>
-                </tr>
-              )}
-              {report.showPurchases && (
-                <>
-                  <tr>
-                    <td>Total purchases</td>
-                    <td className="tr">{money(report.totalPurch, currency)}</td>
-                  </tr>
-                  <tr>
-                    <td>Gross profit</td>
-                    <td className="tr">{signedMoney(profit, currency)}</td>
-                  </tr>
-                </>
-              )}
-              <tr>
-                <td>Total expenses</td>
-                <td className="tr">{money(report.totalExpenses, currency)}</td>
-              </tr>
-              <tr>
-                <td>
-                  <b>Amount sent</b>
-                </td>
-                <td className="tr">
-                  <b>{signedMoney(netProfit, currency)}</b>
-                </td>
-              </tr>
-            </tbody>
-          </table>
           <hr />
           <div className="c">Products sold</div>
           <table>
@@ -159,7 +92,7 @@ export default function CompiledReportModal({ report, onClose }: { report: Compi
           {report.otherIncomeLines.length > 0 && (
             <>
               <hr />
-              <div className="c">Other income (sent directly, not cash)</div>
+              <div className="c">Other income (nets into Total sales)</div>
               <table>
                 <tbody>
                   {report.otherIncomeLines.map((x, i) => (
@@ -178,14 +111,10 @@ export default function CompiledReportModal({ report, onClose }: { report: Compi
                             <span style={{ color: "#888", fontSize: 11 }}>{x.description}</span>
                           </>
                         )}
-                        {x.deduct_from_sales && (
-                          <>
-                            <br />
-                            <span style={{ color: "#888", fontSize: 11 }}>− deducted from Total sales</span>
-                          </>
-                        )}
+                        <br />
+                        <span style={{ color: "#888", fontSize: 11 }}>{x.is_positive ? "+ added to Total sales" : "− subtracted from Total sales"}</span>
                       </td>
-                      <td className="tr">{money(x.amount, currency)}</td>
+                      <td className="tr">{x.is_positive ? money(x.amount, currency) : "−" + money(x.amount, currency)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -218,6 +147,49 @@ export default function CompiledReportModal({ report, onClose }: { report: Compi
               </table>
             </>
           )}
+          <hr />
+          <table>
+            <tbody>
+              <tr>
+                <td>Orders</td>
+                <td className="tr">{report.orderCount}</td>
+              </tr>
+              <tr>
+                <td>Total sales</td>
+                <td className="tr">{money(totalSales, currency)}</td>
+              </tr>
+              {report.totalOutstandingDebt > 0 && (
+                <tr>
+                  <td>Owed (debts)</td>
+                  <td className="tr">{money(report.totalOutstandingDebt, currency)}</td>
+                </tr>
+              )}
+              {report.showPurchases && (
+                <>
+                  <tr>
+                    <td>Total purchases</td>
+                    <td className="tr">{money(report.totalPurch, currency)}</td>
+                  </tr>
+                  <tr>
+                    <td>Gross profit</td>
+                    <td className="tr">{signedMoney(profit, currency)}</td>
+                  </tr>
+                </>
+              )}
+              <tr>
+                <td>Total expenses</td>
+                <td className="tr">{money(report.totalExpenses, currency)}</td>
+              </tr>
+              <tr>
+                <td>
+                  <b>Amount sent</b>
+                </td>
+                <td className="tr">
+                  <b>{signedMoney(netProfit, currency)}</b>
+                </td>
+              </tr>
+            </tbody>
+          </table>
           <hr />
           <div className="c">Compiled {new Date().toLocaleString()}</div>
         </div>

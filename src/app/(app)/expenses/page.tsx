@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { guardedDelete } from "@/lib/db";
 import { useSettings } from "@/contexts/SettingsContext";
-import { money, localDateStr } from "@/lib/format";
+import { money, signedMoney, localDateStr } from "@/lib/format";
 import { groupByPeriod, GroupMode } from "@/lib/grouping";
 import type { Expense, OtherIncome } from "@/lib/types";
 
@@ -22,7 +22,7 @@ export default function ExpensesPage() {
     setLoading(true);
     const [{ data: exp }, { data: inc }] = await Promise.all([
       supabase.from("posinv_expenses").select("id,expense_on,category,description,amount").order("expense_on", { ascending: false }).limit(300),
-      supabase.from("posinv_other_income").select("id,received_on,category,recipient,description,amount,deduct_from_sales").order("received_on", { ascending: false }).limit(300),
+      supabase.from("posinv_other_income").select("id,received_on,category,recipient,description,amount,is_positive").order("received_on", { ascending: false }).limit(300),
     ]);
     setExpenses(exp || []);
     setIncome(inc || []);
@@ -48,7 +48,7 @@ export default function ExpensesPage() {
   };
 
   const expenseGroups = useMemo(() => groupByPeriod(expenses, groupBy, (x) => x.expense_on, (x) => x.amount), [expenses, groupBy]);
-  const incomeGroups = useMemo(() => groupByPeriod(income, groupBy, (x) => x.received_on, (x) => x.amount), [income, groupBy]);
+  const incomeGroups = useMemo(() => groupByPeriod(income, groupBy, (x) => x.received_on, (x) => (x.is_positive ? x.amount : -x.amount)), [income, groupBy]);
 
   return (
     <div className="view">
@@ -69,8 +69,9 @@ export default function ExpensesPage() {
       </div>
       {tab === "income" && (
         <div style={{ color: "var(--muted)", fontSize: 12, margin: "0 0 10px" }}>
-          Money that came in but never touched the till — e.g. a customer paid directly into the bank, or sent money straight to a
-          person/account. Counts toward Total revenue in Reports, but never as an expense, and never as cash at hand.
+          Money that went out or didn&apos;t reach the till — e.g. stock sent directly to someone, or a sale paid straight into an
+          account. Every entry subtracts from that day&apos;s Total sales by default; mark it &quot;genuine extra income&quot; if it
+          should add instead.
         </div>
       )}
       <div className="chips" style={{ padding: "0 0 12px" }}>
@@ -123,19 +124,19 @@ export default function ExpensesPage() {
           <div key={g.label}>
             <div className="rpthead" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span>{g.label}</span>
-              <span>{money(g.total, settings.currency)}</span>
+              <span>{signedMoney(g.total, settings.currency)}</span>
             </div>
             {g.items.map((x) => (
               <div className="listcard" style={{ marginTop: 6 }} key={x.id}>
                 <div className="top">
                   <b>{x.category}</b>
-                  <span className="badge b-Paid">{money(x.amount, settings.currency)}</span>
+                  <span className={`badge ${x.is_positive ? "b-Paid" : "b-Void"}`}>{x.is_positive ? money(x.amount, settings.currency) : "−" + money(x.amount, settings.currency)}</span>
                 </div>
                 <div className="meta">
                   {new Date(x.received_on).toLocaleDateString()}
                   {x.recipient ? " · Sent to: " + x.recipient : ""}
                   {x.description ? " · " + x.description : ""}
-                  {x.deduct_from_sales ? " · − Deducted from Total sales" : ""}
+                  {" · " + (x.is_positive ? "+ added to Total sales" : "− subtracted from Total sales")}
                 </div>
                 <div className="acts">
                   <button className="act-void" onClick={() => deleteIncome(x.id)}>
@@ -235,7 +236,7 @@ function AddIncomeModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
   const [recipient, setRecipient] = useState("");
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
-  const [deductFromSales, setDeductFromSales] = useState(false);
+  const [isPositive, setIsPositive] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -252,7 +253,7 @@ function AddIncomeModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
         recipient: recipient.trim(),
         description: description.trim(),
         amount: amt,
-        deduct_from_sales: deductFromSales,
+        is_positive: isPositive,
         created_by: user?.id,
       });
       if (error) throw error;
@@ -285,13 +286,13 @@ function AddIncomeModal({ onClose, onSaved }: { onClose: () => void; onSaved: ()
         <input type="number" step="0.01" min={0} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
 
         <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14 }}>
-          <input type="checkbox" className="chk" checked={deductFromSales} onChange={(e) => setDeductFromSales(e.target.checked)} />
-          <span style={{ textTransform: "none", fontWeight: 600, color: "var(--ink)" }}>Deduct from that day&apos;s Total sales</span>
+          <input type="checkbox" className="chk" checked={isPositive} onChange={(e) => setIsPositive(e.target.checked)} />
+          <span style={{ textTransform: "none", fontWeight: 600, color: "var(--ink)" }}>This is genuine extra income (adds to Total sales)</span>
         </label>
         <div style={{ color: "var(--muted)", fontSize: 12, margin: "4px 2px 0" }}>
-          Turn this on if this money was already rung up as a sale but actually went straight to an account/person instead of
-          the till — it subtracts this amount from Total sales &amp; Cash at hand so that figure isn&apos;t overstated. Net profit
-          is unaffected either way.
+          By default this entry subtracts from that day&apos;s Total sales — the normal case when stock or a sale's payment went
+          straight to an account/person instead of the till. Only turn this on if the money is real additional revenue that
+          should count on top of Total sales.
         </div>
 
         <button className="checkout" style={{ background: "var(--teal)", marginTop: 14 }} disabled={saving} onClick={save}>
