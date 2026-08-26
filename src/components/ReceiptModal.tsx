@@ -1,6 +1,6 @@
 "use client";
 import { useSettings } from "@/contexts/SettingsContext";
-import { money } from "@/lib/format";
+import { money, fullDateTime } from "@/lib/format";
 
 export interface ReceiptData {
   orderId: number | null;
@@ -47,7 +47,7 @@ export default function ReceiptModal({ data, onClose }: { data: ReceiptData; onC
             </div>
           )}
           <div className="c">
-            {data.orderId != null ? `Order #${data.orderId}` : "Order pending sync"} · {new Date(data.orderOn).toLocaleString()}
+            {data.orderId != null ? `Order #${data.orderId}` : "Order pending sync"} · {fullDateTime(data.orderOn)}
           </div>
           <div className="c">
             {isSale ? "Customer" : "Vendor"}: {data.party} · Cashier: {data.cashierName || "—"}

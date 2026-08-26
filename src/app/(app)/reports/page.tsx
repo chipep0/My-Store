@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useCart } from "@/contexts/CartContext";
-import { money, signedMoney, qtyBoxLabel, localDateStr } from "@/lib/format";
+import { money, signedMoney, qtyBoxLabel, localDateStr, fullDate } from "@/lib/format";
 import { fetchSalesAggregate, emptySalesAggregate } from "@/lib/salesAggregate";
 import type { PeriodArchive } from "@/lib/types";
 import CompiledReportModal, { CompiledReport } from "@/components/CompiledReportModal";
@@ -188,7 +188,12 @@ export default function ReportsPage() {
       start.setHours(0, 0, 0, 0);
     }
     const label = period === "day" ? "DAILY REPORT" : period === "week" ? "WEEKLY REPORT" : "MONTHLY REPORT";
-    const rangeTxt = period === "month" ? start.toLocaleDateString(undefined, { month: "long", year: "numeric" }) : `${start.toLocaleDateString()} – ${end.toLocaleDateString()}`;
+    const rangeTxt =
+      period === "month"
+        ? start.toLocaleDateString(undefined, { month: "long", year: "numeric" })
+        : period === "day"
+          ? fullDate(start)
+          : `${fullDate(start)} – ${fullDate(end)}`;
     compile(start, end, label, rangeTxt);
   };
 
@@ -198,7 +203,7 @@ export default function ReportsPage() {
     const s = new Date(from + "T00:00:00");
     const e = new Date(toVal + "T23:59:59.999");
     if (s > e) return alert("From date must be before the To date.");
-    compile(s, e, "DATE RANGE REPORT", from === toVal ? s.toLocaleDateString() : `${s.toLocaleDateString()} – ${e.toLocaleDateString()}`);
+    compile(s, e, "DATE RANGE REPORT", from === toVal ? fullDate(s) : `${fullDate(s)} – ${fullDate(e)}`);
   };
 
   const refreshArchive = async (a: PeriodArchive) => {

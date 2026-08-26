@@ -13,6 +13,19 @@ export function defaultFromDate(): string {
   return localDateStr(d);
 }
 
+/** "Tuesday, 5 August 2026" — used wherever a date should read out its weekday
+ * (debts, receipts, reports) instead of the bare numeric date. */
+export function fullDate(d: Date | string): string {
+  const date = typeof d === "string" ? new Date(d) : d;
+  return date.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
+
+/** fullDate() plus a time, e.g. "Tuesday, 5 August 2026, 14:32". */
+export function fullDateTime(d: Date | string): string {
+  const date = typeof d === "string" ? new Date(d) : d;
+  return date.toLocaleString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
 export function money(n: number, currency: string): string {
   const rounded = Math.round(n * 100) / 100;
   return currency + rounded.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

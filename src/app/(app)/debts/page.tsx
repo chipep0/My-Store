@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { guardedUpdate } from "@/lib/db";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
-import { money } from "@/lib/format";
+import { money, fullDate } from "@/lib/format";
 import type { OrderPayment } from "@/lib/types";
 import Loading from "@/components/Loading";
 
@@ -128,7 +128,7 @@ export default function DebtsPage() {
         <div key={o.id} style={{ borderTop: "1px solid var(--line, #eee)", padding: "10px 0" }}>
           <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 13 }}>
             <span>
-              Order #{o.id} · {new Date(o.order_on).toLocaleDateString()}
+              Order #{o.id} · {fullDate(o.order_on)}
             </span>
             <span>{money(o.balance_due, currency)} owed</span>
           </div>
@@ -148,7 +148,7 @@ export default function DebtsPage() {
             <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
               {o.payments.map((p) => (
                 <div key={p.id}>
-                  {new Date(p.paid_on).toLocaleDateString()} — {money(p.amount, currency)}
+                  {fullDate(p.paid_on)} — {money(p.amount, currency)}
                   {p.note ? " (" + p.note + ")" : ""}
                 </div>
               ))}
