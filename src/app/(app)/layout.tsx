@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useCart } from "@/contexts/CartContext";
 import { useOfflineQueue } from "@/contexts/OfflineQueueContext";
+import { CatalogProvider } from "@/contexts/CatalogContext";
 import { money } from "@/lib/format";
 import CartPanel from "@/components/CartPanel";
 import PromptModal from "@/components/PromptModal";
@@ -115,7 +116,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           )}
 
           <div className="posRow">
-            <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>{children}</div>
+            <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+              <CatalogProvider>{children}</CatalogProvider>
+            </div>
 
             {pathname === "/pos" && <CartPanel open={cartOpen} onClose={closeCart} />}
           </div>

@@ -5,7 +5,7 @@ import { guardedDelete } from "@/lib/db";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/contexts/SettingsContext";
 import { useCart } from "@/contexts/CartContext";
-import { useCatalog, deriveCategories } from "@/hooks/useCatalog";
+import { useCatalog, deriveCategories } from "@/contexts/CatalogContext";
 import { money, unitPriceFor, stockClass, stockBadgeVariant, stockTag } from "@/lib/format";
 import type { Product } from "@/lib/types";
 import ProductModal from "@/components/ProductModal";

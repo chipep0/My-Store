@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { guardedDelete } from "@/lib/db";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
-import { useCatalog, deriveCategories } from "@/hooks/useCatalog";
+import { useCatalog, deriveCategories } from "@/contexts/CatalogContext";
 import type { Product } from "@/lib/types";
 import ProductCard from "@/components/ProductCard";
 import ProductModal from "@/components/ProductModal";
