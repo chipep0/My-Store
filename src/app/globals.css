@@ -193,7 +193,7 @@
   .changeline{display:flex;justify-content:space-between;font-size:18px;font-weight:800;margin:10px 2px}
 
   /* receipt / report — styled like thermal register paper */
-  #receipt .mbox, #reportModal .mbox{background:#fff;border-radius:2px;max-width:320px;box-shadow:0 2px 18px rgba(0,0,0,.18)}
+  #receipt .mbox, #reportModal .mbox{background:#fff;border-radius:2px;max-width:320px;box-shadow:0 2px 18px rgba(0,0,0,.18);max-height:92%;overflow-y:auto}
   #receipt .rc, #reportModal .rc{font-family:"Courier New",monospace;font-size:12.5px;line-height:1.5;color:#111}
   #receipt .rc h4, #reportModal .rc h4{text-align:center;margin:0 0 2px;font-size:15px;text-transform:uppercase;letter-spacing:.5px}
   #receipt .rc .c, #reportModal .rc .c{text-align:center;color:#333;font-size:12px}
@@ -255,6 +255,6 @@
     body *{visibility:hidden}
     #receipt, #receipt *, #reportModal, #reportModal *{visibility:visible}
     #receipt, #reportModal{position:fixed;inset:0;background:#fff;display:block;padding:10px}
-    #receipt .mbox, #reportModal .mbox{box-shadow:none;max-width:none}
+    #receipt .mbox, #reportModal .mbox{box-shadow:none;max-width:none;max-height:none;overflow:visible}
     #receipt .noprint, #reportModal .noprint{display:none}
   }
